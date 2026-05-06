@@ -54,3 +54,20 @@ forge test
 # Generate coverage report
 forge coverage
 ```
+
+### Deployment to Sepolia Testnet
+
+> Deployement: https://sepolia.etherscan.io/address/0x6B8F21f887c6d141C101B2aD03B654d43Fc60eb0
+
+1. Copy `.env.example` to `.env` and fill in your variables:
+   ```bash
+   cp .env.example .env
+   ```
+2. Source the `.env` variables:
+   ```bash
+   source .env
+   ```
+3. Run the deployment script to Sepolia and verify on Etherscan:
+   ```bash
+   forge script script/DeployForensisChat.s.sol:DeployForensisChat --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
+   ```
