@@ -1,0 +1,27 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=development
+      - MONGO_URI=mongodb://mongo:27017/securechat
+    depends_on:
+      - mongo
+    volumes:
+      - ./:/usr/src/app:delegated
+      - /usr/src/app/node_modules
+
+  mongo:
+    image: mongo:6.0
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_DATABASE=securechat
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - '27017:27017'
+
+volumes:
+  mongo-data:
