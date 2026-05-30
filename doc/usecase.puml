@@ -1,0 +1,76 @@
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+
+actor "User" as user
+actor "Participant" as participant
+actor "Room Master" as master
+actor "Third Party (Verifier)" as thirdparty
+
+user <|-- participant
+participant <|-- master
+
+package "Forensis Chat App" {
+  usecase "Register & Identity Management" as UC_Reg
+  usecase "Login & Session Management" as UC_Login
+  usecase "Sync Devices" as UC_Sync
+  usecase "Manage Profile" as UC_Profile
+  usecase "E2E 1-1 Messaging & Group Chat" as UC_Msg
+  usecase "Create Chat Room" as UC_CreateRoom
+  usecase "Block & Report" as UC_Block
+  usecase "Search Messages" as UC_Search
+  usecase "Manage Media/Files" as UC_Media
+  usecase "Toggle Privacy/KYC Mode" as UC_Privacy
+  usecase "Local Delete" as UC_Delete
+  usecase "Export Evidence (Transcript, Signatures, Root)" as UC_Export
+  usecase "Generate Chat Summary" as UC_Summary
+
+  usecase "Log Messages (Hash & Sign)" as UC_Log
+  usecase "Verify Signatures Off-chain" as UC_VerifyOffchain
+}
+
+package "On-Chain Actions (ForensisChat.sol)" {
+  usecase "Add Participant" as UC_AddPart
+  usecase "Remove Participant" as UC_RmPart
+  usecase "Transfer Room Ownership" as UC_Transfer
+  usecase "Propose Config (Dispute Window)" as UC_PropConfig
+  usecase "Execute Config" as UC_ExecConfig
+  
+  usecase "Veto Config" as UC_VetoConfig
+  usecase "Propose Merkle Root" as UC_PropRoot
+  usecase "Dispute Root" as UC_DispRoot
+  usecase "Confirm Root" as UC_ConfRoot
+  usecase "Verify Proof" as UC_Verify
+}
+
+user --> UC_Reg
+user --> UC_Login
+user --> UC_Sync
+user --> UC_Profile
+user --> UC_Msg
+user --> UC_CreateRoom
+user --> UC_Block
+user --> UC_Search
+user --> UC_Media
+user --> UC_Privacy
+user --> UC_Delete
+user --> UC_Export
+user --> UC_Summary
+
+UC_Msg ..> UC_Log : <<include>>
+
+master --> UC_AddPart
+master --> UC_RmPart
+master --> UC_Transfer
+master --> UC_PropConfig
+master --> UC_ExecConfig
+
+participant --> UC_VetoConfig
+participant --> UC_PropRoot
+participant --> UC_DispRoot
+participant --> UC_ConfRoot
+
+thirdparty --> UC_VerifyOffchain
+thirdparty --> UC_Verify
+
+@enduml
