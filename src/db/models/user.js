@@ -1,44 +1,47 @@
 import mongoose from 'mongoose'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 
-// SALT_ROUNDS can be configured via env; default 12
 const SALT_ROUNDS = Number(process.env.SALT_ROUNDS) || 12
 
 const UserSchema = new mongoose.Schema(
   {
-    username: { type: String, required: true, unique: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    // store only hashed password (never plaintext)
-    password: { type: String, required: true },
-    // publicKey for E2E verification/signature checking
-    publicKey: { type: String },
-    // KYC status: default 'unverified'
+    username: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      minlength: 3,
+      maxlength: 64,
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+      maxlength: 254,
+      match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+    },
+    // The field name stays compatible with the Week 1 auth contract, but only hashes are persisted.
+    password: { type: String, required: true, minlength: 8, select: false },
+    publicKey: { type: String, trim: true, maxlength: 8192, default: null },
     kycStatus: {
       type: String,
       enum: ['unverified', 'pending', 'verified', 'rejected'],
       default: 'unverified',
+      index: true,
     },
   },
   { timestamps: true }
 )
 
-// Hash password before saving if modified
-UserSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next()
-  try {
-    const hash = await bcrypt.hash(this.password, SALT_ROUNDS)
-    this.password = hash
-    return next()
-  } catch (err) {
-    return next(err)
-  }
+UserSchema.pre('save', async function () {
+  if (!this.isModified('password')) return
+  this.password = await bcrypt.hash(this.password, SALT_ROUNDS)
 })
 
-// instance method to compare password
 UserSchema.methods.comparePassword = function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password)
 }
 
 export default mongoose.models.User || mongoose.model('User', UserSchema)
-
-// NOTE: Ensure `package.json` has `"type": "module"` when using ES modules.

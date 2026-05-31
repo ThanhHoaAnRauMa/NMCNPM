@@ -1,0 +1,16 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+node_modules
+npm-debug.log*
+coverage
+cache
+out
+lib
+test
+docs
+doc
+knowledge.md
+sos.md
