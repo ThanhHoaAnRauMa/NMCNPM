@@ -1,0 +1,59 @@
+@startuml
+class User {
+    + ObjectId _id
+    + String username
+    + String email
+    + String passwordHash
+    + String publicKey
+    + String kycStatus
+    + register()
+    + login()
+    + updateProfile()
+}
+
+class Conversation {
+    + ObjectId _id
+    + Array<ObjectId> members
+    + String mode
+    + Date createdAt
+    + createGroup()
+    + addMember()
+}
+
+class Message {
+    + ObjectId _id
+    + ObjectId senderId
+    + ObjectId conversationId
+    + String encryptedContent
+    + String signature
+    + Date timestamp
+    + encrypt()
+    + sign()
+    + verify()
+}
+
+class MerkleCommit {
+    + ObjectId _id
+    + ObjectId conversationId
+    + String rootHash
+    + String txHash
+    + Date timestamp
+    + buildTree()
+    + commitOnChain()
+}
+
+class KYCRecord {
+    + ObjectId _id
+    + ObjectId userId
+    + String hash
+    + String signature
+    + Date createdAt
+    + verifyKYC()
+}
+
+User "1" -- "*" Conversation : participates in >
+User "1" -- "1" KYCRecord : owns >
+Conversation "1" -- "*" Message : contains >
+Conversation "1" -- "*" MerkleCommit : verified by >
+Message "*" -- "1" User : sent by >
+@enduml
