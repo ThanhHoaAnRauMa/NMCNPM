@@ -1,17 +1,18 @@
-### Dockerfile for Node.js backend (adjust `CMD` to your start script if needed)
-FROM node:18-alpine
+FROM node:24-alpine
 
 WORKDIR /usr/src/app
 
-# Install dependencies first (leverage cache)
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy source
-COPY . .
+COPY --chown=node:node src ./src
 
 ENV NODE_ENV=production
 EXPOSE 3000
 
-# Use your package.json `start` script. For development override with docker-compose.
+USER node
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:${PORT:-3000}/healthz || exit 1
+
 CMD ["npm", "start"]

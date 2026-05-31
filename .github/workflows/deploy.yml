@@ -1,59 +1,33 @@
-name: CI / Deploy
+name: Deploy Backend
 
 on:
-  push:
-    branches: [ main ]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  test-and-deploy:
+  deploy-render:
+    name: Trigger Render deploy
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-      - name: Build (if present)
-        run: npm run build --if-present
-
-      # Deploy to Render (backend)
-      - name: Deploy to Render
+      - name: Deploy to Render when configured
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
           if [ -z "$RENDER_API_KEY" ] || [ -z "$RENDER_SERVICE_ID" ]; then
-            echo "Render secrets not set, skipping Render deploy"
-          else
-            echo "Triggering Render deploy..."
-            curl -X POST "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
-              -H "Authorization: Bearer $RENDER_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d '{}' 
+            echo "Render secrets are not configured; skipping deploy."
+            exit 0
           fi
 
-      # Deploy frontend to Vercel (adjust working-directory if frontend is in a subfolder)
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v20
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: ./
-          vercel-args: '--prod'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
-# Notes:
-# - Add repository secrets: RENDER_API_KEY, RENDER_SERVICE_ID, VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
-# - The Render deploy step triggers a new deploy for the service id; customize payload if necessary.
+          curl --fail-with-body --request POST \
+            "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
+            --header "Authorization: Bearer $RENDER_API_KEY" \
+            --header "Content-Type: application/json" \
+            --data '{}'

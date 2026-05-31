@@ -1,0 +1,28 @@
+{
+  "name": "secure-chat-forensics-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Database and API foundation for Secure Chat Forensics",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/backend/*.test.js",
+    "check": "npm test"
+  },
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "mongoose": "^9.0.0",
+    "morgan": "^1.10.1",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.4"
+  }
+}
