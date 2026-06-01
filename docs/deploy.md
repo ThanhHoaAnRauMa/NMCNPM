@@ -49,6 +49,11 @@ The container exposes port `3000` and provides `GET /healthz`.
 and Foundry tests. Existing Solidity formatting drift is reported as advisory
 until the Blockchain owner formats contract files.
 
+`Refresh Dependency Lockfile` runs every Monday and can also be dispatched
+manually. It refreshes only `package-lock.json`, runs backend tests, and pushes a
+bot commit only when the lockfile changed. It intentionally never stages `.env`
+files or arbitrary repository changes.
+
 After a successful `CI` run on `main`, `Deploy Backend` triggers Render when
 these repository secrets exist:
 
