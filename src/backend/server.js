@@ -11,6 +11,9 @@ const userRoutes = require("./src/routes/user.routes");
 const groupRoutes = require("./src/routes/group.routes");
 const chatRoutes = require("./src/routes/chat.routes");
 
+const fileRoutes = require("./src/routes/file.routes");
+const kycRoutes = require("./src/routes/kyc.routes");
+
 const chatSocket = require("./src/socket/chat.socket");
 
 const app = express();
@@ -32,15 +35,13 @@ app.use(
 );
 app.use(express.json({ limit: "10mb" }));
 
-// const security = require("./src/middleware/security");
-// app.use(security.rateLimiter);
-// app.use(security.helmetConfig);
-// app.use(security.xssClean);
-
 app.use("/auth", authRoutes);
 app.use("/users", userRoutes);
 app.use("/groups", groupRoutes);
 app.use("/chat", chatRoutes);
+
+app.use("/files", fileRoutes);
+app.use("/kyc", kycRoutes);
 
 app.get("/health", (req, res) => {
   res.json({

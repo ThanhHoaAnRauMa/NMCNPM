@@ -45,6 +45,14 @@ const MessageSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    fileSizeBytes: {
+      type: Number,
+      default: null,
+    },
+    filePublicId: {
+      type: String,
+      default: null,
+    },
 
     replyTo: {
       type: mongoose.Schema.Types.ObjectId,
@@ -57,12 +65,11 @@ const MessageSchema = new mongoose.Schema(
       default: false,
     },
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true },
 );
 
 MessageSchema.index({ conversationId: 1, createdAt: -1 });
 MessageSchema.index({ senderId: 1 });
+MessageSchema.index({ conversationId: 1, msgType: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Message", MessageSchema);
