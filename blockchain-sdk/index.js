@@ -21,8 +21,8 @@ try {
 }
 
 const RPC_URL = process.env.RPC_URL;
-const PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY;
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
+const PRIVATE_KEY = process.env.RELAYER_PRIVATE_KEY ? process.env.RELAYER_PRIVATE_KEY.trim() : null;
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS ? process.env.CONTRACT_ADDRESS.trim() : null;
 
 let provider, wallet, contract;
 
@@ -34,28 +34,30 @@ if (RPC_URL && PRIVATE_KEY && CONTRACT_ADDRESS && ABI) {
     console.warn("SDK initialized without full configuration. Some features may not work until .env is set and ABI is available.");
 }
 
+export { provider, wallet, contract, ABI };
+
 // ==========================================
 // A. Room & Participant Management
 // ==========================================
 
 export async function createRoomOnChain(roomId, participants, disputeWindow) {
     const tx = await contract.createRoom(roomId, participants, disputeWindow);
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 export async function addParticipantOnChain(roomId, participant) {
     const tx = await contract.addParticipant(roomId, participant);
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 export async function removeParticipantOnChain(roomId, participant) {
     const tx = await contract.removeParticipant(roomId, participant);
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 export async function transferRoomOwnershipOnChain(roomId, newMaster) {
     const tx = await contract.transferRoomOwnership(roomId, newMaster);
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 // ==========================================
@@ -64,17 +66,17 @@ export async function transferRoomOwnershipOnChain(roomId, newMaster) {
 
 export async function proposeRoomConfig(roomId, newDisputeWindow) {
     const tx = await contract.proposeConfig(roomId, newDisputeWindow);
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 export async function vetoRoomConfig(roomId) {
     const tx = await contract.vetoConfig(roomId);
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 export async function executeRoomConfig(roomId) {
     const tx = await contract.executeConfig(roomId);
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 // ==========================================
@@ -92,17 +94,17 @@ export async function proposeMerkleRoot(roomId, messagesArray) {
     const { tree } = buildMerkleTree(messagesArray);
     const rootHash = tree.getHexRoot();
     const tx = await contract.proposeRoot(roomId, rootHash);
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 export async function disputeMerkleRoot(roomId) {
     const tx = await contract.disputeRoot(roomId);
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 export async function confirmMerkleRoot(roomId) {
     const tx = await contract.confirmRoot(roomId);
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 export async function verifyMessageProof(roomId, leafHash, proof) {
@@ -115,12 +117,12 @@ export async function verifyMessageProof(roomId, leafHash, proof) {
 
 export async function pauseContract() {
     const tx = await contract.pause();
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 export async function unpauseContract() {
     const tx = await contract.unpause();
-    return await tx.wait();
+    return await tx.wait(1);
 }
 
 // ==========================================
