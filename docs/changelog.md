@@ -16,6 +16,9 @@ Added:
 Changed:
 
 * Updated `docs/database.md` to reflect current Mongoose schemas and indexes.
+* Synchronized repository memory docs with updated `AGENTS.md` instructions:
+  * future sessions read `docs/decisions.md` before source code
+  * significant decisions include rationale, alternatives, and consequences
 
 Fixed:
 
@@ -24,6 +27,7 @@ Fixed:
 Removed:
 
 * Not Found.
+
 ## 2026-06-01
 
 Added:

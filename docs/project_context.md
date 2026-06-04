@@ -93,5 +93,6 @@ flowchart LR
 1. Read `AGENTS.md`.
 2. Read this file.
 3. Read `docs/changelog.md`.
-4. Read the specific docs file for the task area.
-5. Read source code only where docs are insufficient.
+4. Read `docs/decisions.md`.
+5. Read the specific docs file for the task area.
+6. Read source code only where docs are insufficient.
