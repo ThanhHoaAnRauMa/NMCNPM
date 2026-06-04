@@ -56,7 +56,6 @@ Khi có lỗi trong bất kỳ event nào, server emit `socket_error` với form
 ```javascript
 socket.on("socket_error", ({ event, code, message, ...extra }) => {
   console.error(`[Socket Error] ${event}: ${code} — ${message}`);
-  // Hùng xử lý theo code:
   switch (code) {
     case "NOT_AUTHENTICATED":
     case "TOKEN_EXPIRED":
