@@ -9,6 +9,7 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import { Server as SocketIO } from 'socket.io'
 
+import aiRouter from './routes/ai.js'
 import messagesRouter from './routes/messages.js'
 
 // Environment
@@ -16,13 +17,14 @@ const PORT = process.env.PORT || 3000
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/securechat'
 const NODE_ENV = process.env.NODE_ENV || 'development'
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*'
+const JSON_BODY_LIMIT = process.env.JSON_BODY_LIMIT || '128kb'
 
 // Express app
 const app = express()
 
 // Security and parsing middleware
 app.use(helmet())
-app.use(express.json({ limit: '10kb' }))
+app.use(express.json({ limit: JSON_BODY_LIMIT }))
 app.use(express.urlencoded({ extended: true }))
 app.use(cors({ origin: CORS_ORIGIN }))
 if (NODE_ENV === 'development') app.use(morgan('dev'))
@@ -32,6 +34,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true, env: NODE_ENV }))
 
 // Mount messages router at /messages
 app.use('/messages', messagesRouter)
+app.use('/ai', aiRouter)
 
 // Generic error handler
 app.use((err, _req, res, _next) => {

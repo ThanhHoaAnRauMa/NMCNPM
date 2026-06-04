@@ -14,7 +14,7 @@ http://localhost:3000
 
 Authentication is Not Implemented.
 
-Current routes do not require JWT or session credentials. This is a security gap for routes that write or search `MessageSearch` snippets.
+Current routes do not require JWT or session credentials. This is a security gap for routes that write or search `MessageSearch` snippets and AI routes that receive opt-in plaintext.
 
 ## HTTP Endpoints
 
@@ -108,6 +108,98 @@ Errors:
 
 Security note: This endpoint accepts opt-in plaintext snippets. Authorization is Not Implemented and must be added before production use.
 
+### `POST /ai/summarize`
+
+Summarizes client-supplied plaintext that was decrypted locally by the client. The backend verifies that each `messageId` exists in the requested conversation, calls Gemini, and caches the returned summary for 1 hour.
+
+The `Message` collection remains ciphertext-only. Plaintext from this request is not persisted.
+
+Request body:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `conversationId` | ObjectId string | Yes | Conversation containing the messages |
+| `messageIds` | ObjectId string[] | No | If omitted, derived from `messages[].messageId`; order controls summary order |
+| `messages` | Object[] | Yes | Opt-in plaintext payload from the client |
+| `messages[].messageId` | ObjectId string | Yes | Must belong to `conversationId` |
+| `messages[].text` | String | Yes | Decrypted plaintext; max 4000 chars per message |
+| `messages[].senderId` | ObjectId string | No | Client hint only; DB metadata wins when present |
+| `messages[].timestamp` | Date string | No | Client hint only; DB metadata wins when present |
+
+Response `200`:
+
+```json
+{
+  "summary": "Short conversation summary",
+  "cached": false,
+  "model": "gemini-2.5-flash",
+  "expiresAt": "2026-06-04T01:00:00.000Z",
+  "messageCount": 3
+}
+```
+
+Errors:
+
+| Status | Condition |
+| --- | --- |
+| `400` | Invalid ObjectId, missing plaintext messages, too many messages, or text too large |
+| `404` | One or more messages are not found in the conversation |
+| `503` | Gemini API key is missing or Gemini is unavailable |
+
+### `POST /ai/moderate`
+
+Moderates one plaintext message before the client encrypts and sends it. Gemini has a maximum moderation timeout of 2 seconds. If Gemini is unavailable or times out, the backend allows the message and marks moderation as unavailable.
+
+Request body:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `text` | String | Yes | Plaintext message; max 4000 chars |
+
+Allowed response `200`:
+
+```json
+{
+  "moderation": {
+    "is_moderated": true,
+    "allowed": true,
+    "harmful": false,
+    "categories": [],
+    "warning": ""
+  }
+}
+```
+
+Blocked response `422`:
+
+```json
+{
+  "error": "message_blocked",
+  "moderation": {
+    "is_moderated": true,
+    "allowed": false,
+    "harmful": true,
+    "categories": ["harassment"],
+    "warning": "Message blocked by AI moderation."
+  }
+}
+```
+
+Fallback response `200`:
+
+```json
+{
+  "moderation": {
+    "is_moderated": false,
+    "allowed": true,
+    "harmful": false,
+    "categories": [],
+    "warning": "",
+    "error": "moderation_unavailable"
+  }
+}
+```
+
 ## Socket.IO Events
 
 | Event | Payload | Direction | Status |
@@ -125,6 +217,6 @@ Security note: This endpoint accepts opt-in plaintext snippets. Authorization is
 | User public key | `/users/pubkey`, `/users/:id/pubkey` | Not Implemented |
 | KYC | `/kyc/submit` | Not Implemented |
 | Files | `/files/upload` | Not Implemented |
-| AI | `/ai/summarize`, moderation route | Not Implemented |
+| AI forensic analysis | Future endpoints beyond summarize/moderate | Not Implemented |
 | Blockchain | `/merkle/commit`, `/merkle/verify/:conversationId/:leafIndex`, `/merkle/dispute` | Not Implemented |
 | Forensics | `/forensics/:conversationId` | Not Implemented |

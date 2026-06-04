@@ -40,6 +40,11 @@ Create a Render web service from this repository with Docker deployment. Set:
 | `NODE_ENV` | Yes | Use `production` |
 | `CORS_ORIGIN` | Yes | Deployed frontend origin |
 | `SALT_ROUNDS` | No | Defaults to `12` |
+| `JSON_BODY_LIMIT` | No | Defaults to `128kb` |
+| `GEMINI_API_KEY` | Yes for AI | Google Gemini API key |
+| `GEMINI_MODEL` | No | Defaults to `gemini-2.5-flash` |
+| `GEMINI_TIMEOUT_MS` | No | Defaults to `10000` |
+| `GEMINI_MODERATION_TIMEOUT_MS` | No | Capped at `2000` by backend code |
 
 The container exposes port `3000` and provides `GET /healthz`.
 
@@ -59,3 +64,9 @@ these repository secrets exist:
 
 Frontend deployment is intentionally excluded because this repository does not
 currently contain the Vite frontend.
+
+## AI Routes
+
+`POST /ai/summarize` and `POST /ai/moderate` require `GEMINI_API_KEY`.
+Plaintext sent to AI routes is opt-in and transient; only the summary result is
+cached in MongoDB for 1 hour.

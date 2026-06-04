@@ -46,6 +46,17 @@ This file records decisions that can be inferred from the current implementation
 | Decision | Use `MessageSearch` for opt-in plaintext snippets with a 24-hour TTL and text index. |
 | Consequences | Search can work only for snippets explicitly uploaded by clients. Authorization is still required before production use. |
 
+## Opt-In Plaintext AI Processing
+
+| Field | Decision |
+| --- | --- |
+| Status | Implemented |
+| Context | The primary `Message` collection stores ciphertext only, so the backend cannot summarize or moderate message content by reading MongoDB records. |
+| Rationale | AI features need plaintext, but persisting plaintext would weaken the E2E privacy model. |
+| Alternatives Considered | Backend decrypts messages; summarize `MessageSearch` snippets only; store plaintext history. Backend decryption is not possible without client keys, snippets are incomplete, and plaintext history conflicts with privacy requirements. |
+| Decision | AI routes accept explicit client-supplied plaintext after local decrypt/before encrypt, call Gemini from the backend, and do not persist source plaintext. |
+| Consequences | `/ai/summarize` verifies message ids against MongoDB metadata, caches only summary output for 1 hour, and requires frontend/user opt-in for plaintext disclosure. |
+
 ## Node.js 24 Runtime
 
 | Field | Decision |

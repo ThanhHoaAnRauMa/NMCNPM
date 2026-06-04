@@ -14,7 +14,7 @@ The current repository is not a complete application. It contains:
 | Crypto | Standalone JavaScript crypto module |
 | DevOps | Docker, Docker Compose, GitHub Actions, Render trigger workflow |
 | Frontend | Not Implemented in this repository |
-| AI | Not Implemented in source code |
+| AI | Gemini summary and moderation routes implemented for opt-in plaintext |
 
 Code remains the source of truth. Planned features from requirement documents must not be treated as implemented unless source code exists.
 
@@ -24,9 +24,12 @@ Code remains the source of truth. Planned features from requirement documents mu
 flowchart LR
   Client[Client or API consumer] --> Express[Express server]
   Express --> Messages[/messages routes]
+  Express --> AI[/ai routes]
   Express --> SocketIO[Socket.IO join/leave rooms]
   Express --> Mongo[(MongoDB via Mongoose)]
   Messages --> MessageSearch[(MessageSearch collection)]
+  AI --> AISummaryCache[(AISummaryCache collection)]
+  AI --> Gemini[Google Gemini API]
   Foundry[Foundry tests/scripts] --> Contract[ForensisChat.sol]
 ```
 
@@ -37,12 +40,14 @@ flowchart LR
 | `GET /healthz` | Implemented | Returns `{ ok: true, env }` |
 | `POST /messages/search` | Implemented | Searches opt-in ephemeral snippets |
 | `POST /messages/index-snippet` | Implemented | Upserts one temporary snippet per message |
+| `POST /ai/summarize` | Implemented | Summarizes client-supplied decrypted plaintext and caches summary for 1 hour |
+| `POST /ai/moderate` | Implemented | Moderates plaintext before encryption; allows with `is_moderated: false` on Gemini failure |
 | Socket.IO `join` / `leave` | Implemented | Joins/leaves rooms by `conversationId` |
 | Authentication routes | Not Implemented | No `/auth/*` route files found |
 | User public-key routes | Not Implemented | No `/users/*` route files found |
 | KYC submission API | Not Implemented | Model exists only |
 | Merkle REST API | Not Implemented | Contract and model exist, no backend REST layer |
-| AI summary/moderation API | Not Implemented | No Gemini integration code found |
+| AI forensic analysis API | Not Implemented | Future AI endpoints beyond summarize/moderate |
 
 ## Completed Milestones
 
@@ -51,6 +56,7 @@ flowchart LR
 | Database schema v1 | `src/db/models/*.js` |
 | Message search API | `src/routes/messages.js` |
 | Cursor query helper | `src/db/queries/messages.js` |
+| AI summary and moderation API | `src/routes/ai.js`, `src/services/` |
 | Docker and Compose | `Dockerfile`, `docker-compose.yml` |
 | CI and deploy workflows | `.github/workflows/test.yml`, `.github/workflows/deploy.yml` |
 | Backend tests | `test/backend/*.test.js` |
@@ -65,7 +71,7 @@ flowchart LR
 | Chat Service | Message persistence and real-time send/deliver/seen flows |
 | KYC | `/kyc/submit` API and review workflow |
 | Blockchain backend | REST endpoints for commit, verify, dispute, forensics |
-| AI | Gemini summary and moderation endpoints |
+| AI | Future forensic analysis endpoints beyond summary/moderation |
 | Frontend | React/Vite app is not present |
 | API docs | Swagger/OpenAPI files are not present |
 
@@ -75,6 +81,7 @@ flowchart LR
 | --- | --- |
 | Do not store message plaintext in `Message` | `Message` stores `encryptedContent`, `signature`, hashes, and metadata |
 | Server-side search cannot search ciphertext | `MessageSearch` stores opt-in snippets with 24h TTL |
+| Server-side AI cannot read ciphertext | `/ai/summarize` and `/ai/moderate` require explicit client-supplied plaintext and do not persist it |
 | Secrets must not be committed | `.env` ignored; `.env.example` contains placeholders |
 | MongoDB compatibility | Mongoose models use ObjectId references and indexes |
 | Blockchain compatibility | Database has `MerkleCommit`; backend REST integration is missing |
