@@ -23,6 +23,14 @@ Defined in `.env.example`:
 | `MONGO_PORT` | No | Docker Compose | Defaults to `27017` |
 | `CORS_ORIGIN` | No | Backend | Defaults to `*` in code/Compose |
 | `SALT_ROUNDS` | No | User model | Defaults to `12` |
+| `JSON_BODY_LIMIT` | No | Backend | Defaults to `128kb`; needed for AI summary payloads |
+| `GEMINI_API_KEY` | Yes for AI | AI routes | Google Gemini API key; never commit real value |
+| `GEMINI_MODEL` | No | AI routes | Defaults to `gemini-2.5-flash` |
+| `GEMINI_TIMEOUT_MS` | No | AI summary | Defaults to `10000` |
+| `GEMINI_MODERATION_TIMEOUT_MS` | No | AI moderation | Capped at `2000` by code |
+| `AI_MAX_SUMMARY_MESSAGES` | No | AI summary | Defaults to `100` |
+| `AI_MAX_MESSAGE_CHARS` | No | AI summary/moderation | Defaults to `4000` |
+| `AI_MAX_TOTAL_CHARS` | No | AI summary | Defaults to `20000` |
 | `SEPOLIA_RPC_URL` | Yes for contract deploy | Foundry script | Placeholder in `.env.example` |
 | `PRIVATE_KEY` | Yes for contract deploy | Foundry script | Placeholder only; never commit real value |
 | `ETHERSCAN_API_KEY` | No/Yes for verification | Foundry script command | Placeholder only |
@@ -116,3 +124,5 @@ If Render secrets are missing, the deploy step exits successfully without deploy
 | Frontend deployment | Not Implemented; frontend app not in repository |
 | Secret rotation procedure | Not Found |
 | Monitoring/log aggregation | Not Found |
+
+AI routes require `GEMINI_API_KEY` in Render before `/ai/summarize` or `/ai/moderate` can call Gemini. If moderation cannot reach Gemini within 2 seconds, the backend allows the message and returns `is_moderated: false`.

@@ -14,6 +14,7 @@ The database stores account metadata, encrypted message payloads, KYC hashes, Me
 | `Conversation` | `src/db/models/conversation.js` | Direct/group conversation metadata |
 | `Message` | `src/db/models/message.js` | Encrypted message payloads and integrity metadata |
 | `MessageSearch` | `src/db/models/messageSearch.js` | Opt-in temporary plaintext snippets for search |
+| `AISummaryCache` | `src/db/models/aiSummaryCache.js` | Cached Gemini summaries without storing source plaintext |
 | `MerkleCommit` | `src/db/models/merkleCommit.js` | Merkle root and on-chain transaction metadata |
 | `KYCRecord` | `src/db/models/kycRecord.js` | KYC document hash/signature metadata |
 
@@ -99,6 +100,27 @@ Indexes:
 | `{ senderId: 1, createdAt: -1 }` | Sender-filtered search |
 
 Security note: Upload authorization is Not Implemented. The route currently validates shape only.
+
+## AISummaryCache
+
+`AISummaryCache` stores Gemini summary results for 1 hour. It does not store the plaintext prompt or source message text.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `conversationId` | ObjectId -> `Conversation` | Yes | Conversation summarized |
+| `cacheKey` | String | Yes | SHA-256 key derived from conversation, message ids, plaintext request, and model |
+| `messageIds` | ObjectId[] -> `Message` | Yes | Source messages verified by backend |
+| `summary` | String | Yes | Gemini response, max 8000 chars |
+| `model` | String | Yes | Gemini model name |
+| `expiresAt` | Date | Yes | TTL expiry time |
+| timestamps | Date | Auto | `createdAt`, `updatedAt` |
+
+Indexes:
+
+| Index | Purpose |
+| --- | --- |
+| `{ conversationId: 1, cacheKey: 1 }` unique | Reuse summaries and avoid repeated Gemini calls |
+| `{ expiresAt: 1 }` TTL 0 seconds | Delete cached summaries after expiry |
 
 ## MerkleCommit
 

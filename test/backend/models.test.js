@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from 'node:util'
 import mongoose from 'mongoose'
 
 import Conversation from '../../src/db/models/conversation.js'
+import AISummaryCache from '../../src/db/models/aiSummaryCache.js'
 import KYCRecord from '../../src/db/models/kycRecord.js'
 import MerkleCommit from '../../src/db/models/merkleCommit.js'
 import Message from '../../src/db/models/message.js'
@@ -34,6 +35,19 @@ test('MessageSearch is text indexed and TTL-cleaned after 24 hours', () => {
       ([keys, options]) => keys.createdAt === 1 && options.expireAfterSeconds === 60 * 60 * 24
     )
   )
+})
+
+test('AISummaryCache stores summaries only and expires after one hour', () => {
+  const paths = Object.keys(AISummaryCache.schema.paths)
+  assert.ok(paths.includes('summary'))
+  assert.ok(paths.includes('cacheKey'))
+  assert.ok(paths.includes('expiresAt'))
+  assert.ok(!paths.includes('plaintext'))
+  assert.ok(!paths.includes('messages'))
+
+  const indexes = AISummaryCache.schema.indexes()
+  assert.ok(hasIndex(AISummaryCache, { conversationId: 1, cacheKey: 1 }))
+  assert.ok(indexes.some(([keys, options]) => keys.expiresAt === 1 && options.expireAfterSeconds === 0))
 })
 
 test('Conversation rejects empty or duplicate member lists', async () => {

@@ -4,6 +4,11 @@
 
 Added:
 
+* Week 3 AI deliverables:
+  * `POST /ai/summarize` for Gemini-backed summaries of opt-in decrypted plaintext.
+  * `POST /ai/moderate` for pre-encryption content moderation.
+  * `AISummaryCache` MongoDB TTL cache for 1-hour summary reuse.
+  * Gemini REST client, AI prompt helpers, moderation middleware factory, and backend tests.
 * Documentation system entry files:
   * `docs/project_context.md`
   * `docs/architecture.md`
@@ -15,6 +20,9 @@ Added:
 
 Changed:
 
+* Mounted `/ai` routes in the root Express backend.
+* Increased configurable JSON body limit via `JSON_BODY_LIMIT` for AI summary payloads.
+* Updated API, database, architecture, deployment, and decision docs for AI integration.
 * Updated `docs/database.md` to reflect current Mongoose schemas and indexes.
 * Synchronized repository memory docs with updated `AGENTS.md` instructions:
   * future sessions read `docs/decisions.md` before source code

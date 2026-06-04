@@ -6,6 +6,8 @@
 | --- | --- | --- |
 | `src/index.js` | Express, HTTP server, Socket.IO setup, MongoDB connection | Implemented |
 | `src/routes/messages.js` | Message search and snippet indexing routes | Implemented |
+| `src/routes/ai.js` | Gemini-backed summary and moderation routes | Implemented |
+| `src/services/` | Gemini client, AI prompts, moderation helper | Implemented |
 | `src/db/models/` | Mongoose models | Implemented |
 | `src/db/queries/messages.js` | Cursor-based message query helper | Implemented |
 | `src/crypto/` | Standalone crypto utilities and demo | Implemented, not wired into backend routes |
@@ -24,7 +26,10 @@ flowchart TD
   SocketClient[Socket.IO Client] --> SocketServer[Socket.IO Server]
   Express --> Health[GET /healthz]
   Express --> MessagesRouter[/messages router]
+  Express --> AIRouter[/ai router]
   MessagesRouter --> MessageSearch[(MessageSearch)]
+  AIRouter --> AISummaryCache[(AISummaryCache)]
+  AIRouter --> Gemini[Gemini API]
   Express --> Mongoose[Mongoose]
   Mongoose --> MongoDB[(MongoDB)]
 
@@ -43,9 +48,10 @@ flowchart TD
    - `morgan` in development
 3. `GET /healthz` is registered.
 4. `/messages` router is mounted.
-5. Socket.IO is attached to the HTTP server.
-6. Mongoose connects to `MONGO_URI`.
-7. HTTP server starts after MongoDB connection succeeds.
+5. `/ai` router is mounted.
+6. Socket.IO is attached to the HTTP server.
+7. Mongoose connects to `MONGO_URI`.
+8. HTTP server starts after MongoDB connection succeeds.
 
 ## Socket.IO
 
@@ -88,6 +94,17 @@ The `src/crypto/` module exposes:
 
 This module is not imported by the current Express routes.
 
+## AI Integration
+
+| Capability | Status | Notes |
+| --- | --- | --- |
+| Conversation summary | Implemented | `POST /ai/summarize`; requires client-supplied decrypted plaintext |
+| Summary cache | Implemented | MongoDB TTL cache in `AISummaryCache`, 1 hour |
+| Content moderation | Implemented | `POST /ai/moderate` and middleware factory in `src/services/aiModeration.js` |
+| Moderation fallback | Implemented | Allows message with `is_moderated: false` when Gemini is unavailable or times out |
+
+The backend does not decrypt messages. AI routes are an explicit plaintext disclosure path and must not persist source plaintext.
+
 ## Non-Implemented Architecture Areas
 
 | Area | Expected by project docs | Current Source Status |
@@ -96,6 +113,6 @@ This module is not imported by the current Express routes.
 | Chat Service | real-time encrypted messaging | Only room join/leave implemented |
 | File upload | Multer/Cloudinary | Not Found |
 | KYC API | `/kyc/submit` | Not Implemented |
-| AI API | Gemini summary/moderation | Not Implemented |
+| AI forensic analysis | Evidence analysis beyond summary/moderation | Not Implemented |
 | Blockchain REST layer | `/merkle/*`, `/forensics/*` | Not Implemented |
 | Frontend | React/Vite UI | Not Found |
