@@ -44,3 +44,65 @@ const socket = io(import.meta.env.VITE_API_URL, {
 ---
 
 ## Luồng gửi tin nhắn thường (KYC Mode)
+
+---
+
+## Cập nhật tuần 4 — SCRUM-130: Error codes và Offline handling
+
+### Event server → client: `socket_error`
+
+Khi có lỗi trong bất kỳ event nào, server emit `socket_error` với format thống nhất:
+
+```javascript
+socket.on("socket_error", ({ event, code, message, ...extra }) => {
+  console.error(`[Socket Error] ${event}: ${code} — ${message}`);
+  switch (code) {
+    case "NOT_AUTHENTICATED":
+    case "TOKEN_EXPIRED":
+      redirectToLogin();
+      break;
+    case "ACCOUNT_LOCKED":
+      showLockMessage(extra.remainingMin);
+      break;
+    case "NOT_A_MEMBER":
+    case "CONVERSATION_NOT_FOUND":
+      showErrorToast(message);
+      break;
+    case "USE_PRIVATE_EVENT":
+      usePrivateMessageEvent();
+      break;
+    default:
+      showErrorToast(message);
+  }
+});
+```
+
+### Tất cả error codes
+
+| Code                      | HTTP tương đương | Ý nghĩa                           |
+| ------------------------- | ---------------- | --------------------------------- |
+| `MISSING_REQUIRED_FIELDS` | 400              | Thiếu field bắt buộc              |
+| `NOT_AUTHENTICATED`       | 401              | Chưa emit user_online             |
+| `NOT_A_MEMBER`            | 403              | Không có quyền trong conversation |
+| `CONVERSATION_NOT_FOUND`  | 404              | Conversation không tồn tại        |
+| `USE_PRIVATE_EVENT`       | 422              | Dùng sai event cho Privacy Mode   |
+| `SERVER_ERROR`            | 500              | Lỗi server không xác định         |
+| `BLOCKED_BY_RECEIVER`     | 403              | Người nhận đã block bạn           |
+
+### Event: `get_missed_messages` (reconnect)
+
+```javascript
+socket.on("connect", () => {
+  const lastMessageTime = localStorage.getItem("lastMessageTime");
+  if (lastMessageTime) {
+    socket.emit("get_missed_messages", {
+      conversationId: currentConvId,
+      since: lastMessageTime,
+    });
+  }
+});
+
+socket.on("missed_messages", ({ conversationId, messages, count }) => {
+  mergeMessages(messages);
+});
+```

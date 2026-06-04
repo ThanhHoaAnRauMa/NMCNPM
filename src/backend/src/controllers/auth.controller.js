@@ -2,6 +2,9 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User.model");
 const { generateTokens, verifyRefreshToken } = require("../utils/jwt.utils");
 
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCK_DURATION_MS = 15 * 60 * 1000;
+
 exports.register = async (req, res) => {
   try {
     const { username, email, password } = req.body;
@@ -10,11 +13,25 @@ exports.register = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Vui lòng điền đầy đủ username, email và password.",
+        code: "MISSING_FIELDS",
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password phải có ít nhất 6 ký tự.",
+        code: "PASSWORD_TOO_SHORT",
       });
     }
 
     const emailExists = await User.findOne({ email });
     if (emailExists) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Email này đã được đăng ký. Vui lòng dùng email khác hoặc đăng nhập.",
+        code: "EMAIL_ALREADY_EXISTS",
       return res.status(400).json({
         success: false,
         message: "Email này đã được đăng ký rồi.",
@@ -23,6 +40,13 @@ exports.register = async (req, res) => {
 
     const usernameExists = await User.findOne({ username });
     if (usernameExists) {
+      return res.status(409).json({
+        success: false,
+        message: "Username này đã có người dùng. Vui lòng chọn username khác.",
+        code: "USERNAME_ALREADY_EXISTS",
+      });
+    }
+
       return res.status(400).json({
         success: false,
         message: "Username này đã có người dùng rồi.",
@@ -51,6 +75,17 @@ exports.register = async (req, res) => {
     });
   } catch (err) {
     if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Email hoặc username đã tồn tại.",
+        code: "DUPLICATE_KEY",
+      });
+    }
+    console.error("[register]", err);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server. Vui lòng thử lại sau.",
+      code: "SERVER_ERROR",
       return res.status(400).json({
         success: false,
         message: "Email hoặc username đã tồn tại.",
@@ -72,11 +107,69 @@ exports.login = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Vui lòng điền email và password.",
+        code: "MISSING_FIELDS",
       });
     }
 
     const user = await User.findOne({ email });
 
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Email hoặc mật khẩu không đúng.",
+        code: "INVALID_CREDENTIALS",
+      });
+    }
+
+    if (user.isLocked()) {
+      const remainingMs = user.lockUntil - new Date();
+      const remainingMin = Math.ceil(remainingMs / 60000);
+
+      return res.status(423).json({
+        success: false,
+        message: `Tài khoản bị tạm khóa do nhập sai mật khẩu quá nhiều lần. Vui lòng thử lại sau ${remainingMin} phút.`,
+        code: "ACCOUNT_LOCKED",
+        lockUntil: user.lockUntil,
+        remainingMin,
+      });
+    }
+
+    const isValid = await bcrypt.compare(password, user.password);
+
+    if (!isValid) {
+      const newAttempts = (user.loginAttempts || 0) + 1;
+
+      if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
+        const lockUntil = new Date(Date.now() + LOCK_DURATION_MS);
+        await User.findByIdAndUpdate(user._id, {
+          loginAttempts: newAttempts,
+          lockUntil,
+        });
+        return res.status(423).json({
+          success: false,
+          message: `Bạn đã nhập sai mật khẩu ${MAX_LOGIN_ATTEMPTS} lần. Tài khoản bị tạm khóa 15 phút.`,
+          code: "ACCOUNT_LOCKED",
+          lockUntil,
+          remainingMin: 15,
+        });
+      }
+
+      await User.findByIdAndUpdate(user._id, { loginAttempts: newAttempts });
+      const remaining = MAX_LOGIN_ATTEMPTS - newAttempts;
+
+      return res.status(401).json({
+        success: false,
+        message: `Email hoặc mật khẩu không đúng. Còn ${remaining} lần thử trước khi tài khoản bị tạm khóa.`,
+        code: "INVALID_CREDENTIALS",
+        attemptsLeft: remaining,
+      });
+    }
+
+    await User.findByIdAndUpdate(user._id, {
+      loginAttempts: 0,
+      lockUntil: null,
+      isOnline: true,
+    });
     const isValid = user
       ? await bcrypt.compare(password, user.password)
       : false;
@@ -106,6 +199,11 @@ exports.login = async (req, res) => {
       refreshToken,
     });
   } catch (err) {
+    console.error("[login]", err);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server. Vui lòng thử lại sau.",
+      code: "SERVER_ERROR",
     console.error("[login error]", err);
     return res.status(500).json({
       success: false,
@@ -126,6 +224,11 @@ exports.logout = async (req, res) => {
       message: "Đăng xuất thành công.",
     });
   } catch (err) {
+    console.error("[logout]", err);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server.",
+      code: "SERVER_ERROR",
     console.error("[logout error]", err);
     return res.status(500).json({
       success: false,
@@ -142,6 +245,7 @@ exports.refresh = async (req, res) => {
       return res.status(401).json({
         success: false,
         message: "Thiếu refresh token.",
+        code: "MISSING_REFRESH_TOKEN",
       });
     }
 
@@ -152,6 +256,7 @@ exports.refresh = async (req, res) => {
       return res.status(401).json({
         success: false,
         message: "Tài khoản không tồn tại.",
+        code: "USER_NOT_FOUND",
       });
     }
 
@@ -166,6 +271,10 @@ exports.refresh = async (req, res) => {
       success: false,
       message:
         "Refresh token không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.",
+      code:
+        err.name === "TokenExpiredError"
+          ? "REFRESH_TOKEN_EXPIRED"
+          : "REFRESH_TOKEN_INVALID",
     });
   }
 };

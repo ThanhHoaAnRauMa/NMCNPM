@@ -34,6 +34,10 @@ const UserSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    displayName: {
+      type: String,
+      default: null,
+    },
     isOnline: {
       type: Boolean,
       default: false,
@@ -48,6 +52,22 @@ const UserSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    loginAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lockUntil: {
+      type: Date,
+      default: null,
+    },
+  },
+  { timestamps: true },
+);
+
+UserSchema.methods.isLocked = function () {
+  return this.lockUntil && this.lockUntil > new Date();
+};
+
   },
   {
     timestamps: true,

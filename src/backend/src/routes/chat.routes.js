@@ -34,4 +34,37 @@ router.get("/:conversationId/messages", verifyToken, async (req, res) => {
   }
 });
 
+router.delete("/messages/:messageId", verifyToken, async (req, res) => {
+  try {
+    const message = await Message.findById(req.params.messageId);
+
+    if (!message) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Không tìm thấy tin nhắn." });
+    }
+
+    if (message.senderId.toString() !== req.userId) {
+      return res.status(403).json({
+        success: false,
+        message: "Bạn chỉ có thể xóa tin nhắn của chính mình.",
+      });
+    }
+
+    await Message.findByIdAndUpdate(req.params.messageId, {
+      deletedForSender: true,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Đã xóa tin nhắn (chỉ xóa phía bạn). Tin nhắn vẫn còn trong log của đối phương.",
+      messageId: req.params.messageId,
+    });
+  } catch (err) {
+    console.error("[softDeleteMessage]", err);
+    return res.status(500).json({ success: false, message: "Lỗi server." });
+  }
+});
+
 module.exports = router;
