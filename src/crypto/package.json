@@ -1,3 +1,15 @@
 {
-    "type": "module"
+  "name": "securechat-crypto",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "demo:crypto": "node demo/crypto-demo.js",
+    "demo:key-exchange": "node demo/key-exchange-demo.js",
+    "demo:forensic-log": "node demo/forensic-log-demo.js",
+    "demo:kyc": "node demo/kyc-demo.js",
+    "demo:evidence": "node demo/evidence-export-demo.js",
+    "demo:security": "node demo/security-demo.js",
+    "demo:all": "node demo/crypto-demo.js && node demo/key-exchange-demo.js && node demo/forensic-log-demo.js && node demo/kyc-demo.js && node demo/evidence-export-demo.js && node demo/security-demo.js"
+  }
 }

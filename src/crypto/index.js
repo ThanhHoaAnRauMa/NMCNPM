@@ -17,3 +17,10 @@ export * from './core/interfaces.js';
 
 // Utils
 export { CryptoUtils } from './core/utils.js';
+
+// Nhat Anh modules for SecureChat integration
+export * from './crypto.js';
+export * from './keyExchange.js';
+export * from './forensicLog.js';
+export * from './kyc.js';
+export * from './evidenceExport.js';
