@@ -88,6 +88,7 @@ socket.on("socket_error", ({ event, code, message, ...extra }) => {
 | `CONVERSATION_NOT_FOUND`  | 404              | Conversation không tồn tại        |
 | `USE_PRIVATE_EVENT`       | 422              | Dùng sai event cho Privacy Mode   |
 | `SERVER_ERROR`            | 500              | Lỗi server không xác định         |
+| `BLOCKED_BY_RECEIVER`     | 403              | Người nhận đã block bạn           |
 
 ### Event: `get_missed_messages` (reconnect)
 

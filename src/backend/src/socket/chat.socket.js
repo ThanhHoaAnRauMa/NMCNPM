@@ -133,6 +133,30 @@ module.exports = (io) => {
           return;
         }
 
+        if (conv.type === "DIRECT") {
+          const receiverId = conv.members
+            .find((m) => m.toString() !== senderId)
+            ?.toString();
+
+          if (receiverId) {
+            const receiver =
+              await User.findById(receiverId).select("blocklist");
+            const isBlocked = receiver?.blocklist?.some(
+              (id) => id.toString() === senderId,
+            );
+
+            if (isBlocked) {
+              emitError(
+                "send_message",
+                "BLOCKED_BY_RECEIVER",
+                "Không thể gửi tin nhắn. Bạn đã bị người nhận chặn.",
+                { tempId },
+              );
+              return;
+            }
+          }
+        }
+
         if (conv.mode === "PRIVACY") {
           emitError(
             "send_message",
