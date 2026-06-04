@@ -53,6 +53,21 @@ app.get("/health", (req, res) => {
 
 chatSocket(io);
 
+
+const authRoutes = require("./src/routes/auth.routes");
+
+const app = express();
+
+app.use(cors());
+
+app.use(express.json());
+
+app.use("/auth", authRoutes);
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ MongoDB connected"))
@@ -65,4 +80,6 @@ const PORT = process.env.PORT || 3000;
 httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔌 Socket.io ready`);
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });

@@ -32,6 +32,9 @@ exports.register = async (req, res) => {
         message:
           "Email này đã được đăng ký. Vui lòng dùng email khác hoặc đăng nhập.",
         code: "EMAIL_ALREADY_EXISTS",
+      return res.status(400).json({
+        success: false,
+        message: "Email này đã được đăng ký rồi.",
       });
     }
 
@@ -44,6 +47,11 @@ exports.register = async (req, res) => {
       });
     }
 
+      return res.status(400).json({
+        success: false,
+        message: "Username này đã có người dùng rồi.",
+      });
+    }
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await User.create({
@@ -78,6 +86,15 @@ exports.register = async (req, res) => {
       success: false,
       message: "Lỗi server. Vui lòng thử lại sau.",
       code: "SERVER_ERROR",
+      return res.status(400).json({
+        success: false,
+        message: "Email hoặc username đã tồn tại.",
+      });
+    }
+    console.error("[register error]", err);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server. Vui lòng thử lại sau.",
     });
   }
 };
@@ -153,6 +170,18 @@ exports.login = async (req, res) => {
       lockUntil: null,
       isOnline: true,
     });
+    const isValid = user
+      ? await bcrypt.compare(password, user.password)
+      : false;
+
+    if (!user || !isValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Email hoặc mật khẩu không đúng.",
+      });
+    }
+
+    await User.findByIdAndUpdate(user._id, { isOnline: true });
 
     const { accessToken, refreshToken } = generateTokens(user._id.toString());
 
@@ -175,6 +204,10 @@ exports.login = async (req, res) => {
       success: false,
       message: "Lỗi server. Vui lòng thử lại sau.",
       code: "SERVER_ERROR",
+    console.error("[login error]", err);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server. Vui lòng thử lại sau.",
     });
   }
 };
@@ -196,6 +229,10 @@ exports.logout = async (req, res) => {
       success: false,
       message: "Lỗi server.",
       code: "SERVER_ERROR",
+    console.error("[logout error]", err);
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server.",
     });
   }
 };
