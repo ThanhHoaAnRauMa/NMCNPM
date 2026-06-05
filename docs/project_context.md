@@ -61,6 +61,7 @@ flowchart LR
 | Docker and Compose | `Dockerfile`, `docker-compose.yml` |
 | CI and deploy workflows | `.github/workflows/test.yml`, `.github/workflows/deploy.yml` |
 | Backend unit and integration tests | `test/backend/*.test.js`; integration suite uses MongoDB Memory Server |
+| Database/DevOps/AI test case documentation | `doc/tuan-database-devops-ai-test-case.md` |
 | Solidity contract tests | `test/ForensisChat.t.sol` |
 
 ## Pending Milestones
