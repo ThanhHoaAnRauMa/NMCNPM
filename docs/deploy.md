@@ -12,7 +12,7 @@ docker compose up --build
 The backend is available on `http://localhost:3000`. Verify it with:
 
 ```bash
-curl http://localhost:3000/healthz
+curl http://localhost:3000/health
 ```
 
 Compose waits for MongoDB health before starting the backend and persists data
@@ -25,6 +25,7 @@ Node.js 24 LTS is the supported runtime.
 ```bash
 npm ci
 npm test
+npm run test:integration
 npm start
 ```
 
@@ -46,13 +47,15 @@ Create a Render web service from this repository with Docker deployment. Set:
 | `GEMINI_TIMEOUT_MS` | No | Defaults to `10000` |
 | `GEMINI_MODERATION_TIMEOUT_MS` | No | Capped at `2000` by backend code |
 
-The container exposes port `3000` and provides `GET /healthz`.
+The container exposes port `3000` and provides `GET /health`. `GET /healthz`
+is still available for backward compatibility.
 
 ## GitHub Actions
 
-`CI` runs backend tests, Compose validation, Docker image build, Foundry build,
-and Foundry tests. Existing Solidity formatting drift is reported as advisory
-until the Blockchain owner formats contract files.
+`CI` runs backend tests, MongoDB Memory Server integration tests, Compose
+validation, Docker image build, Foundry build, and Foundry tests. Existing
+Solidity formatting drift is reported as advisory until the Blockchain owner
+formats contract files.
 
 After a successful `CI` run on `main`, `Deploy Backend` triggers Render when
 these repository secrets exist:
@@ -63,7 +66,7 @@ these repository secrets exist:
 | `RENDER_SERVICE_ID` | Target backend service |
 
 Frontend deployment is intentionally excluded because this repository does not
-currently contain the Vite frontend.
+currently contain the Vite frontend or Vercel config.
 
 ## AI Routes
 

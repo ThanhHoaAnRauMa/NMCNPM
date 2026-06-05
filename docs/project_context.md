@@ -38,6 +38,7 @@ flowchart LR
 | Component | Status | Notes |
 | --- | --- | --- |
 | `GET /healthz` | Implemented | Returns `{ ok: true, env }` |
+| `GET /health` | Implemented | Returns `{ status, uptime, timestamp }` for production health checks |
 | `POST /messages/search` | Implemented | Searches opt-in ephemeral snippets |
 | `POST /messages/index-snippet` | Implemented | Upserts one temporary snippet per message |
 | `POST /ai/summarize` | Implemented | Summarizes client-supplied decrypted plaintext and caches summary for 1 hour |
@@ -59,7 +60,7 @@ flowchart LR
 | AI summary and moderation API | `src/routes/ai.js`, `src/services/` |
 | Docker and Compose | `Dockerfile`, `docker-compose.yml` |
 | CI and deploy workflows | `.github/workflows/test.yml`, `.github/workflows/deploy.yml` |
-| Backend tests | `test/backend/*.test.js` |
+| Backend unit and integration tests | `test/backend/*.test.js`; integration suite uses MongoDB Memory Server |
 | Solidity contract tests | `test/ForensisChat.t.sol` |
 
 ## Pending Milestones
@@ -94,6 +95,7 @@ flowchart LR
 | `AGENTS.md` may be untracked locally | Observed during documentation task; not modified |
 | `lib/*` submodules may show local state changes after Foundry commands | Observed locally; not part of documentation changes |
 | Some older docs under `doc/` and `docs/requirements/` are design/spec material, not implementation truth | Documented here to avoid confusion |
+| Frontend/Vercel deployment is blocked in this repository | Frontend app and Vercel config are not present |
 
 ## Startup Procedure for Future AI Sessions
 

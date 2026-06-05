@@ -10,6 +10,7 @@ import morgan from 'morgan'
 import { Server as SocketIO } from 'socket.io'
 
 import aiRouter from './routes/ai.js'
+import { registerHealthRoutes } from './health.js'
 import messagesRouter from './routes/messages.js'
 
 // Environment
@@ -29,8 +30,8 @@ app.use(express.urlencoded({ extended: true }))
 app.use(cors({ origin: CORS_ORIGIN }))
 if (NODE_ENV === 'development') app.use(morgan('dev'))
 
-// Health check
-app.get('/healthz', (_req, res) => res.json({ ok: true, env: NODE_ENV }))
+// Health checks
+registerHealthRoutes(app, { env: NODE_ENV })
 
 // Mount messages router at /messages
 app.use('/messages', messagesRouter)

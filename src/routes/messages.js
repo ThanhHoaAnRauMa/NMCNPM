@@ -134,7 +134,7 @@ router.post('/index-snippet', async (req, res) => {
           createdAt: new Date(),
         },
       },
-      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', runValidators: true, setDefaultsOnInsert: true }
     )
 
     return res.status(201).json({ id: document._id })

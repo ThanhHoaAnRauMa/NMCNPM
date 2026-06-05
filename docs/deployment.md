@@ -9,6 +9,7 @@
 | Database | MongoDB, local or Atlas |
 | Container runtime | Docker |
 | Smart contract toolchain | Foundry |
+| Integration test database | `mongodb-memory-server` |
 
 ## Environment Variables
 
@@ -47,10 +48,11 @@ Render workflow secrets:
 ```bash
 npm ci
 npm test
+npm run test:integration
 npm start
 ```
 
-The server starts only after Mongoose connects to `MONGO_URI`.
+`npm test` runs unit and integration tests. `npm run test:integration` runs only the MongoDB Memory Server integration suite. The server starts only after Mongoose connects to `MONGO_URI`.
 
 ## Local Docker Compose
 
@@ -62,7 +64,7 @@ Services:
 
 | Service | Image/Build | Healthcheck |
 | --- | --- | --- |
-| `app` | Builds from `Dockerfile` | `GET /healthz` |
+| `app` | Builds from `Dockerfile` | `GET /health` |
 | `mongo` | `mongo:8.0` | `db.adminCommand('ping')` |
 
 Compose stores MongoDB data in the `mongo-data` volume.
@@ -77,7 +79,7 @@ Compose stores MongoDB data in the `mongo-data` volume.
 | Dependency install | `npm ci --omit=dev` |
 | Runtime user | `node` |
 | Exposed port | `3000` |
-| Healthcheck | `GET /healthz` |
+| Healthcheck | `GET /health` |
 
 Only `package*.json` and `src/` are copied into the image.
 
@@ -102,6 +104,8 @@ Jobs:
 | Backend database and API | checkout, setup Node 24, `npm ci`, `npm test`, `docker compose config`, `docker build .` |
 | Foundry contracts | checkout submodules, install Foundry, `forge fmt --check` advisory, `forge build --sizes`, `forge test -vvv` |
 
+Backend tests include MongoDB Memory Server integration coverage for User, Conversation, Message, cursor pagination, message search, and MerkleCommit persistence.
+
 ### Deploy Backend
 
 File: `.github/workflows/deploy.yml`
@@ -121,7 +125,7 @@ If Render secrets are missing, the deploy step exits successfully without deploy
 | --- | --- |
 | Render service definition | Not Found |
 | Atlas provisioning script | Not Found |
-| Frontend deployment | Not Implemented; frontend app not in repository |
+| Frontend deployment | Blocked; frontend app and Vercel config are not in this repository |
 | Secret rotation procedure | Not Found |
 | Monitoring/log aggregation | Not Found |
 
