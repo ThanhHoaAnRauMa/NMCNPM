@@ -4,6 +4,8 @@
 
 Added:
 
+* Database/DevOps/AI testing documentation for Nguyễn Ngọc Tuân:
+  * `doc/tuan-database-devops-ai-test-case.md`
 * Week 4 deployment and integration-test deliverables:
   * `GET /health` production health endpoint with `{ status, uptime, timestamp }`.
   * MongoDB Memory Server integration tests for User, Conversation, Message, pagination, search, and MerkleCommit.
