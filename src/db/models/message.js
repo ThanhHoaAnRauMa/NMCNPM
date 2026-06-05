@@ -27,11 +27,10 @@ MessageSchema.index(
   { unique: true, partialFilterExpression: { clientMessageId: { $type: 'string' } } }
 )
 
-MessageSchema.pre('save', function (next) {
+MessageSchema.pre('save', function () {
   if (!this.contentHash && this.encryptedContent) {
     this.contentHash = crypto.createHash('sha256').update(this.encryptedContent).digest('hex')
   }
-  next()
 })
 
 export default mongoose.models.Message || mongoose.model('Message', MessageSchema)

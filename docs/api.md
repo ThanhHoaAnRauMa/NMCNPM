@@ -18,6 +18,20 @@ Current routes do not require JWT or session credentials. This is a security gap
 
 ## HTTP Endpoints
 
+### `GET /health`
+
+Production health endpoint used by deployment health checks.
+
+Response `200`:
+
+```json
+{
+  "status": "ok",
+  "uptime": 12.345,
+  "timestamp": "2026-06-05T00:00:00.000Z"
+}
+```
+
 ### `GET /healthz`
 
 Returns backend health and environment.
@@ -30,6 +44,8 @@ Response `200`:
   "env": "development"
 }
 ```
+
+This endpoint remains for backward compatibility.
 
 ### `POST /messages/search`
 

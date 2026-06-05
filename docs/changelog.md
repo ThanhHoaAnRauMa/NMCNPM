@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-06-05
+
+Added:
+
+* Week 4 deployment and integration-test deliverables:
+  * `GET /health` production health endpoint with `{ status, uptime, timestamp }`.
+  * MongoDB Memory Server integration tests for User, Conversation, Message, pagination, search, and MerkleCommit.
+  * `test:integration` npm script.
+
+Changed:
+
+* Docker and Compose health checks now use `GET /health`; `GET /healthz` remains available.
+* Replaced deprecated Mongoose `new` option with `returnDocument: "after"` in owned routes/tests.
+
+Fixed:
+
+* Fixed `Message` model pre-save middleware for Mongoose 9 so `contentHash` is generated during real MongoDB writes.
+
+Removed:
+
+* Not Found.
+
 ## 2026-06-04
 
 Added:

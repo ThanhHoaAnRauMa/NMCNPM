@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test test/backend/*.test.js",
+    "test:integration": "node --test test/backend/integration.test.js",
     "check": "npm test"
   },
   "engines": {
@@ -23,6 +24,7 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "mongodb-memory-server": "^11.2.0",
     "supertest": "^7.1.4"
   }
 }

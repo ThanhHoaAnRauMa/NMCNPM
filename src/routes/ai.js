@@ -197,7 +197,7 @@ export function createAiRouter({
             expiresAt,
           },
         },
-        { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+        { upsert: true, returnDocument: 'after', runValidators: true, setDefaultsOnInsert: true }
       )
         .lean()
         .exec()
