@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-06-06
+
+Added:
+
+* Week 3-4 AI usage documentation for Nguyễn Ngọc Tuân in `docs/requirements/AI_usage.md`.
+
+Changed:
+
+* Not Found.
+
+Fixed:
+
+* Not Found.
+
+Removed:
+
+* Not Found.
+
 ## 2026-06-05
 
 Added:
