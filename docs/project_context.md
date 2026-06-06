@@ -62,6 +62,7 @@ flowchart LR
 | CI and deploy workflows | `.github/workflows/test.yml`, `.github/workflows/deploy.yml` |
 | Backend unit and integration tests | `test/backend/*.test.js`; integration suite uses MongoDB Memory Server |
 | Database/DevOps/AI test case documentation | `doc/tuan-database-devops-ai-test-case.md` |
+| Database/DevOps/AI usage documentation | `docs/requirements/AI_usage.md` |
 | Solidity contract tests | `test/ForensisChat.t.sol` |
 
 ## Pending Milestones
