@@ -68,10 +68,4 @@ UserSchema.methods.isLocked = function () {
   return this.lockUntil && this.lockUntil > new Date();
 };
 
-  },
-  {
-    timestamps: true,
-  },
-);
-
 module.exports = mongoose.model("User", UserSchema);

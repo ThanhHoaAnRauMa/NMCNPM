@@ -41,12 +41,10 @@ exports.addMember = async (req, res) => {
 
     const isAdmin = group.admins.some((a) => a.toString() === req.userId);
     if (!isAdmin) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Chỉ admin mới được thêm thành viên.",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "Chỉ admin mới được thêm thành viên.",
+      });
     }
 
     const { userId } = req.body;
@@ -77,12 +75,10 @@ exports.removeMember = async (req, res) => {
     const isAdmin = group.admins.some((a) => a.toString() === req.userId);
 
     if (!isSelf && !isAdmin) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Chỉ admin mới được xóa thành viên.",
-        });
+      return res.status(403).json({
+        success: false,
+        message: "Chỉ admin mới được xóa thành viên.",
+      });
     }
 
     await Conversation.findByIdAndUpdate(req.params.id, {
@@ -140,6 +136,89 @@ exports.getMyGroups = async (req, res) => {
     return res.status(200).json({ success: true, groups });
   } catch (err) {
     console.error("[getMyGroups]", err);
+    return res.status(500).json({ success: false, message: "Lỗi server." });
+  }
+};
+
+exports.getMyConversations = async (req, res) => {
+  try {
+    const conversations = await Conversation.find({
+      members: req.userId,
+    })
+      .populate(
+        "members",
+        "username displayName avatarUrl isOnline lastSeen kycStatus",
+      )
+      .populate({
+        path: "lastMessage",
+        select:
+          "encryptedContent msgType senderId createdAt status fileMime fileName",
+        populate: { path: "senderId", select: "username" },
+      })
+      .sort({ updatedAt: -1 });
+
+    const formatted = conversations.map((conv) => {
+      let displayInfo = {};
+
+      if (conv.type === "DIRECT") {
+        const otherUser = conv.members.find(
+          (m) => m._id.toString() !== req.userId,
+        );
+        displayInfo = {
+          name: otherUser?.displayName || otherUser?.username || "Unknown",
+          avatarUrl: otherUser?.avatarUrl || null,
+          isOnline: otherUser?.isOnline || false,
+          lastSeen: otherUser?.lastSeen || null,
+          kycStatus: otherUser?.kycStatus || "NONE",
+          otherUserId: otherUser?._id || null,
+        };
+      } else {
+        displayInfo = {
+          name: conv.groupName || "Nhóm chưa đặt tên",
+          avatarUrl: conv.groupAvatar || null,
+          memberCount: conv.members.length,
+        };
+      }
+
+      let lastMessagePreview = null;
+      if (conv.lastMessage) {
+        const lm = conv.lastMessage;
+        if (lm.msgType === "FILE") {
+          lastMessagePreview = `📎 ${lm.fileName || "File đính kèm"}`;
+        } else if (lm.msgType === "SYSTEM") {
+          lastMessagePreview = lm.encryptedContent;
+        } else {
+          lastMessagePreview = "[Encrypted Message]";
+        }
+      }
+
+      return {
+        conversationId: conv._id,
+        type: conv.type,
+        mode: conv.mode,
+        ...displayInfo,
+        lastMessage: conv.lastMessage
+          ? {
+              preview: lastMessagePreview,
+              encryptedContent: conv.lastMessage.encryptedContent,
+              senderId: conv.lastMessage.senderId?._id,
+              senderName: conv.lastMessage.senderId?.username,
+              msgType: conv.lastMessage.msgType,
+              status: conv.lastMessage.status,
+              createdAt: conv.lastMessage.createdAt,
+            }
+          : null,
+        updatedAt: conv.updatedAt,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      conversations: formatted,
+      count: formatted.length,
+    });
+  } catch (err) {
+    console.error("[getMyConversations]", err);
     return res.status(500).json({ success: false, message: "Lỗi server." });
   }
 };
