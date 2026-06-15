@@ -106,3 +106,52 @@ socket.on("missed_messages", ({ conversationId, messages, count }) => {
   mergeMessages(messages);
 });
 ```
+
+---
+
+## REST API — Danh sách Conversation (Sidebar màn hình chính)
+
+### GET /conversations/all
+
+Trả về TẤT CẢ conversation (DIRECT + GROUP) của user hiện tại, sort theo `updatedAt` mới nhất.
+
+**Header:** `Authorization: Bearer <accessToken>`
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "count": 2,
+  "conversations": [
+    {
+      "conversationId": "string",
+      "type": "DIRECT | GROUP",
+      "mode": "KYC | PRIVACY",
+      "name": "string",
+      "avatarUrl": "string | null",
+      "isOnline": "boolean (chỉ DIRECT)",
+      "lastSeen": "ISO date | null (chỉ DIRECT)",
+      "kycStatus": "string (chỉ DIRECT)",
+      "otherUserId": "string (chỉ DIRECT)",
+      "memberCount": "number (chỉ GROUP)",
+      "lastMessage": {
+        "preview": "string",
+        "encryptedContent": "string",
+        "senderId": "string",
+        "senderName": "string",
+        "msgType": "TEXT | FILE | SYSTEM",
+        "status": "SENT | DELIVERED | SEEN",
+        "createdAt": "ISO date"
+      } | null,
+      "updatedAt": "ISO date"
+    }
+  ]
+}
+```
+
+**Cách dùng phía Frontend:**
+
+- Gọi 1 lần khi load màn hình chính → render sidebar.
+- Mỗi khi nhận `new_message` qua WebSocket → cập nhật `lastMessage` của conversation tương ứng trong state, và move conversation đó lên đầu danh sách (re-sort theo `updatedAt`).
+- Click vào 1 conversation trong sidebar → emit `join_conversation` + gọi `GET /chat/:conversationId/messages` để load lịch sử.
