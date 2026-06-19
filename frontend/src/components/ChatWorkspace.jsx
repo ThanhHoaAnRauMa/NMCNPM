@@ -12,6 +12,21 @@ function uniqueMessages(messages) {
   })
 }
 
+function HighlightedSnippet({ value = '' }) {
+  let highlighted = false
+  return value.split(/(<\/?mark>)/i).map((part, index) => {
+    if (/^<mark>$/i.test(part)) {
+      highlighted = true
+      return null
+    }
+    if (/^<\/mark>$/i.test(part)) {
+      highlighted = false
+      return null
+    }
+    return highlighted ? <mark key={index}>{part}</mark> : <span key={index}>{part}</span>
+  })
+}
+
 export default function ChatWorkspace({ api, socket, conversation, currentUser, identity }) {
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
@@ -310,7 +325,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
             <>
               <form className="mt-5 flex gap-2" onSubmit={runSearch}><input className="field" maxLength={200} placeholder="Từ khóa" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} /><button className="btn-primary" type="submit">Tìm</button></form>
               <p className="mt-3 text-[10px] leading-5 text-slate-600">Chỉ tìm các snippet mà người gửi đã chủ động lập chỉ mục.</p>
-              <div className="mt-5 space-y-3">{searchResults.map((result) => <article className="rounded-xl border border-line bg-ink/50 p-3" key={result._id}><p className="message-mark text-xs leading-5 text-slate-300" dangerouslySetInnerHTML={{ __html: result.highlightedSnippet }} /><small className="mt-2 block text-slate-600">{shortTime(result.createdAt)}</small></article>)}</div>
+              <div className="mt-5 space-y-3">{searchResults.map((result) => <article className="rounded-xl border border-line bg-ink/50 p-3" key={result._id}><p className="message-mark text-xs leading-5 text-slate-300"><HighlightedSnippet value={result.highlightedSnippet} /></p><small className="mt-2 block text-slate-600">{shortTime(result.createdAt)}</small></article>)}</div>
             </>
           ) : (
             <div className="mt-5"><div className="rounded-xl border border-mint/20 bg-mint/5 p-4"><p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{summary?.summary || 'Đang tạo tóm tắt...'}</p></div>{summary && <p className="mt-3 text-[10px] text-slate-600">{summary.messageCount} tin nhắn · {summary.cached ? 'cache' : summary.model}</p>}<p className="mt-5 text-[10px] leading-5 text-amber">Plaintext của các tin đã chọn được gửi tới Gemini khi bạn bấm tóm tắt; nguồn plaintext không được lưu trong Message.</p></div>

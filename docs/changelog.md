@@ -20,6 +20,7 @@ Changed:
 
 Fixed:
 
+* Removed raw HTML rendering from frontend message-search highlights to prevent stored XSS through indexed snippets.
 * Removed duplicated merge fragments that made feature backend files fail to parse.
 * Prevented Socket.IO identity spoofing through `user_online` and added membership checks.
 * Prevented unauthorized conversation history/file access and unsafe regex user search.
