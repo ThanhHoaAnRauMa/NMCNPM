@@ -89,3 +89,47 @@ This file records decisions that can be inferred from the current implementation
 | Alternatives Considered | Deploy on every push regardless of CI; fail when Render secrets are absent. Both are too fragile for this repository. |
 | Decision | Trigger Render deploy after successful CI on `main` when secrets exist. |
 | Consequences | Missing `RENDER_API_KEY` or `RENDER_SERVICE_ID` causes deploy job to skip rather than fail. |
+
+## 2026-06-19 Canonical Backend Runtime
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | Root ESM routes and feature CommonJS routes previously started as separate servers; the feature server also contained merge corruption. |
+| Rationale | One HTTP server, Socket.IO instance, MongoDB connection, port, and health endpoint prevents divergent behavior and disconnected model buffers. |
+| Alternatives Considered | Run two APIs on different ports; convert all feature code to ESM immediately. Two APIs complicate frontend/deployment, while a full conversion is an unrelated rewrite. |
+| Decision | `src/index.js` mounts all routes and sockets; `src/backend/server.js` only launches it. Feature models resolve root Mongoose through a bridge. |
+| Consequences | Root and nested dependencies must both be installed; parallel schema files remain technical debt. |
+
+## Browser-Owned Message Encryption
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | Backend message storage must remain ciphertext-only, but users need direct/group chat and files. |
+| Rationale | AES-GCM is efficient for content, RSA-OAEP can wrap one AES key per member, and ECDSA authenticates the serialized envelope. |
+| Alternatives Considered | Server encryption; plaintext storage; reuse the Node-only crypto package in Vite. These expose plaintext or are not browser-compatible. |
+| Decision | Generate device keys with Web Crypto, store private JWKs in IndexedDB, publish only a versioned public bundle, and encrypt/sign before REST or Socket.IO transport. |
+| Consequences | Clearing browser data loses local decryption ability; key backup/rotation and multi-device transfer are not implemented. |
+
+## KYC Submission Is Pending
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | Existing code marked arbitrary client-supplied hashes as `VERIFIED`. |
+| Rationale | A client cannot authoritatively verify its own identity. |
+| Alternatives Considered | Preserve automatic verification for demo convenience. Rejected because it misrepresents trust and weakens security. |
+| Decision | `/kyc/submit` creates `PENDING`; only a future reviewer/provider integration may set `VERIFIED`. |
+| Consequences | No user can become newly verified until another owner implements the review workflow. |
+
+## Frontend Deployment Target Deferred
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | Frontend source/image now exists, but no approved Vercel/Render static-site project is configured. |
+| Rationale | Repository rules forbid inventing or changing deployment targets without approval. |
+| Alternatives Considered | Add an unconfigured Vercel action. Rejected because it creates a misleading deployment claim. |
+| Decision | CI builds/tests the frontend and image; production frontend deployment remains explicitly unconfigured. |
+| Consequences | A project owner must select hosting and add secrets/project identifiers. |

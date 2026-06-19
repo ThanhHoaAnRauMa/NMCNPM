@@ -1,73 +1,88 @@
-# ForensisChat Smart Contracts
+# Secure Chat Forensics
 
-ForensisChat is the on-chain dispute and configuration resolution layer for a privacy-first, forensic-ready secure messaging application. It acts as a mathematically proven, immutable contract governing the integrity and sequence of conversations between parties.
+Secure Chat Forensics is an educational full-stack messaging system that combines client-side encryption, MongoDB ciphertext persistence, Gemini-assisted moderation/summaries, and a Foundry/Sepolia Merkle verification contract.
 
-## Architecture
+## Implemented Stack
 
-To bridge the gap between absolute privacy (like Telegram) and centralized convenience (like Messenger), ForensisChat implements a decentralized "Merkle Root Committing" architecture:
+| Layer | Technology |
+| --- | --- |
+| Frontend | React, Vite, TailwindCSS, Socket.IO Client, ethers.js, Web Crypto, IndexedDB |
+| Backend | Node.js 24, Express, Socket.IO, JWT |
+| Database | MongoDB, Mongoose |
+| AI | Google Gemini REST API |
+| Files | Client-encrypted blobs stored through Cloudinary |
+| Blockchain | Solidity, Foundry, OpenZeppelin UUPS, Sepolia |
+| DevOps | Docker, Docker Compose, GitHub Actions, Render backend trigger |
 
-1. **Local P2P Execution:** Messages are exchanged off-chain. Each message is end-to-end encrypted, hashed, and signed by the sender's private key. Both parties maintain a local log.
-2. **Merkle Trees:** Periodically, participants hash their local conversation log into a Merkle Tree.
-3. **On-Chain Commits:** A participant proposes the Merkle Root of their conversation to this smart contract (`proposeRoot`).
-4. **Dispute Window:** A time-bound dispute window allows any other participant to dispute the proposed root (`disputeRoot`) if it does not match their local mathematically-verified log.
-5. **Confirmation:** If the dispute window elapses without objection, the root is permanently confirmed (`confirmRoot` or auto-confirmed on next proposal), establishing a legally verifiable point-in-time snapshot of the conversation.
+## Security Model
 
-## Features
+* Message/file plaintext is encrypted in the browser with AES-256-GCM.
+* AES keys are RSA-OAEP wrapped for conversation members.
+* Encrypted envelopes are signed with ECDSA P-256.
+* Browser private keys stay in IndexedDB; MongoDB stores public keys and ciphertext.
+* KYC mode persists ciphertext. Privacy mode relays ciphertext without persistence.
+* Search snippets and AI plaintext require explicit client actions; search snippets expire after 24 hours.
 
-- **Room Master Role:** The room creator acts as the room master, who can add/remove participants, configure the dispute window, and transfer ownership.
-- **Config Timelock:** Any changes to the dispute window parameter enforce a 1-day timelock (`CONFIG_TIMELOCK = 1 days`), ensuring participants cannot be blindsided by sudden parameter changes.
-- **Participant Vetoes:** Participants can veto config proposals before the 1-day timelock executes.
-- **Proof Verification:** An on-chain getter (`verifyProof`) is available to independently verify if a specific message leaf belongs to the confirmed root.
-- **Upgradable & Pausable:** Utilizes OpenZeppelin's UUPS proxy architecture and `Pausable` for future updates and emergency stops.
+This is a portfolio/educational implementation, not an audited production messenger. See `docs/project_context.md` for current gaps.
 
-## Getting Started
+## Quick Start
 
-### Prerequisites
-
-- [Foundry](https://getfoundry.sh/) installed (`forge`, `cast`, `anvil`)
-- OpenZeppelin dependencies (installed via Forge)
-
-### Installation
-
-Clone the repository and install the libraries:
+### Docker Compose
 
 ```bash
-git clone https://github.com/ThanhHoaAnRauMa/NMCNPM.git
-cd NMCNPM
-git checkout Tona
-
-# Install Dependencies
-forge install
+cp .env.example .env
+docker compose up --build
 ```
 
-### Build & Test
+Open:
 
-The test suite covers 100% of the lines, statements, and functions.
+* Frontend: `http://localhost:5173`
+* API health: `http://localhost:3000/health`
+
+### Local Node.js
+
+Node.js 24 and MongoDB are required.
 
 ```bash
-# Compile contracts
+npm ci
+npm ci --prefix src/backend
+npm install --prefix frontend
+npm test
+npm --prefix frontend run check
+npm start
+npm --prefix frontend run dev
+```
+
+Copy `.env.example` to `.env` and configure JWT secrets. Gemini and Cloudinary are optional for core text chat but required for AI and encrypted attachments.
+
+## Contracts
+
+```bash
 forge build
-
-# Run tests
 forge test
-
-# Generate coverage report
-forge coverage
 ```
 
-### Deployment to Sepolia Testnet
+Deployment script:
 
-> Deployement: https://sepolia.etherscan.io/address/0x6B8F21f887c6d141C101B2aD03B654d43Fc60eb0
+```bash
+forge script script/DeployForensisChat.s.sol:DeployForensisChat \
+  --rpc-url "$SEPOLIA_RPC_URL" \
+  --private-key "$PRIVATE_KEY" \
+  --broadcast --verify \
+  --etherscan-api-key "$ETHERSCAN_API_KEY"
+```
 
-1. Copy `.env.example` to `.env` and fill in your variables:
-   ```bash
-   cp .env.example .env
-   ```
-2. Source the `.env` variables:
-   ```bash
-   source .env
-   ```
-3. Run the deployment script to Sepolia and verify on Etherscan:
-   ```bash
-   forge script script/DeployForensisChat.s.sol:DeployForensisChat --rpc-url $SEPOLIA_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY
-   ```
+Never expose `PRIVATE_KEY` through a `VITE_*` variable.
+
+## Documentation
+
+| Document | Purpose |
+| --- | --- |
+| `docs/project_context.md` | Concise current state and blockers |
+| `docs/architecture.md` | Runtime/security architecture |
+| `docs/database.md` | Collections and indexes |
+| `docs/api.md` | HTTP contracts |
+| `docs/websocket-events.md` | Socket.IO contracts |
+| `docs/deployment.md` | Environment, containers, CI/deployment |
+| `docs/decisions.md` | Engineering decisions and tradeoffs |
+| `docs/changelog.md` | Completed changes |

@@ -1,132 +1,84 @@
 # Deployment
 
-## Runtime Requirements
+## Requirements
 
-| Component | Version/Tool |
+| Component | Requirement |
 | --- | --- |
 | Node.js | `>=24 <25` |
-| Package manager | npm with `package-lock.json` |
-| Database | MongoDB, local or Atlas |
-| Container runtime | Docker |
-| Smart contract toolchain | Foundry |
-| Integration test database | `mongodb-memory-server` |
+| Database | MongoDB 8 local or MongoDB Atlas |
+| Containers | Docker + Compose |
+| Contracts | Foundry for build/test/deploy |
+| External services | Gemini for AI; Cloudinary for encrypted attachments |
 
-## Environment Variables
-
-Defined in `.env.example`:
-
-| Variable | Required | Used By | Notes |
-| --- | --- | --- | --- |
-| `NODE_ENV` | No | Backend | Defaults to `development` |
-| `PORT` | No | Backend/Docker | Defaults to `3000` |
-| `MONGO_URI` | Yes outside Compose | Backend | Defaults locally to `mongodb://localhost:27017/securechat` |
-| `MONGO_DATABASE` | No | Docker Compose | Defaults to `securechat` |
-| `MONGO_PORT` | No | Docker Compose | Defaults to `27017` |
-| `CORS_ORIGIN` | No | Backend | Defaults to `*` in code/Compose |
-| `SALT_ROUNDS` | No | User model | Defaults to `12` |
-| `JSON_BODY_LIMIT` | No | Backend | Defaults to `128kb`; needed for AI summary payloads |
-| `GEMINI_API_KEY` | Yes for AI | AI routes | Google Gemini API key; never commit real value |
-| `GEMINI_MODEL` | No | AI routes | Defaults to `gemini-2.5-flash` |
-| `GEMINI_TIMEOUT_MS` | No | AI summary | Defaults to `10000` |
-| `GEMINI_MODERATION_TIMEOUT_MS` | No | AI moderation | Capped at `2000` by code |
-| `AI_MAX_SUMMARY_MESSAGES` | No | AI summary | Defaults to `100` |
-| `AI_MAX_MESSAGE_CHARS` | No | AI summary/moderation | Defaults to `4000` |
-| `AI_MAX_TOTAL_CHARS` | No | AI summary | Defaults to `20000` |
-| `SEPOLIA_RPC_URL` | Yes for contract deploy | Foundry script | Placeholder in `.env.example` |
-| `PRIVATE_KEY` | Yes for contract deploy | Foundry script | Placeholder only; never commit real value |
-| `ETHERSCAN_API_KEY` | No/Yes for verification | Foundry script command | Placeholder only |
-
-Render workflow secrets:
-
-| Secret | Required | Notes |
-| --- | --- | --- |
-| `RENDER_API_KEY` | Yes to deploy | If missing, deploy job skips |
-| `RENDER_SERVICE_ID` | Yes to deploy | If missing, deploy job skips |
-
-## Local Node.js
+## Local Development
 
 ```bash
 npm ci
+npm ci --prefix src/backend
+npm install --prefix frontend
 npm test
-npm run test:integration
+npm --prefix frontend run check
 npm start
+npm --prefix frontend run dev
 ```
 
-`npm test` runs unit and integration tests. `npm run test:integration` runs only the MongoDB Memory Server integration suite. The server starts only after Mongoose connects to `MONGO_URI`.
+The API listens on `3000`; Vite listens on `5173`. The feature package is installed separately because its CommonJS routes retain their own dependencies. All models still share the root Mongoose connection.
 
-## Local Docker Compose
+## Docker Compose
 
 ```bash
 docker compose up --build
 ```
 
-Services:
-
-| Service | Image/Build | Healthcheck |
+| Service | Port | Health |
 | --- | --- | --- |
-| `app` | Builds from `Dockerfile` | `GET /health` |
-| `mongo` | `mongo:8.0` | `db.adminCommand('ping')` |
+| `frontend` | `${FRONTEND_PORT:-5173}` -> Nginx 80 | `/health` |
+| `app` | `${PORT:-3000}` | `/health` |
+| `mongo` | `${MONGO_PORT:-27017}` | Mongo ping |
 
-Compose stores MongoDB data in the `mongo-data` volume.
+The frontend image is a Vite build served by Nginx. `VITE_*` values are build-time values; changing them requires rebuilding the image.
 
-## Docker Image
+## Environment Variables
 
-`Dockerfile`:
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `MONGO_URI` | Yes outside Compose | MongoDB connection |
+| `PORT`, `NODE_ENV`, `CORS_ORIGIN` | Production | API runtime and allowed frontend origin |
+| `JWT_SECRET`, `JWT_REFRESH_SECRET` | Yes | Use different random secrets, at least 32 chars |
+| `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` | No | Defaults `15m`, `7d` |
+| `GEMINI_API_KEY` | For AI | Gemini API key |
+| `GEMINI_MODEL`, `GEMINI_*_TIMEOUT_MS`, `AI_MAX_*` | No | AI model, limits, timeouts |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | For files | Encrypted blob storage |
+| `MAX_FILE_SIZE_MB` | No | Default 10 MB |
+| `VITE_API_URL` | Frontend build | Public API/Socket.IO URL |
+| `VITE_CONTRACT_ADDRESS` | For proof UI | Deployed `ForensisChat` address |
+| `SEPOLIA_RPC_URL`, `PRIVATE_KEY`, `ETHERSCAN_API_KEY` | Contract deployment only | Never expose private key as `VITE_*` |
 
-| Property | Value |
+## Images
+
+Backend `Dockerfile` installs root production dependencies and `src/backend` production dependencies, then runs the canonical `src/index.js` as the unprivileged `node` user.
+
+Frontend `frontend/Dockerfile` builds static assets with Node 24 and serves them from `nginx:1.27-alpine` with SPA fallback.
+
+## CI
+
+`.github/workflows/test.yml` runs three jobs:
+
+| Job | Required Checks |
 | --- | --- |
-| Base image | `node:24-alpine` |
-| Dependency install | `npm ci --omit=dev` |
-| Runtime user | `node` |
-| Exposed port | `3000` |
-| Healthcheck | `GET /health` |
+| Backend | Root/nested installs, syntax checks, Node tests, Compose config, backend image build |
+| Frontend | Install, Vitest, Vite production build, frontend image build |
+| Contracts | Foundry build and tests; formatting remains advisory |
 
-Only `package*.json` and `src/` are copied into the image.
+## Production
 
-## GitHub Actions
+The existing deploy workflow conditionally triggers a Render backend service after successful CI on `main` using `RENDER_API_KEY` and `RENDER_SERVICE_ID`.
 
-### CI
+Frontend production deployment is **Not Configured**. The repository builds a deployable image, but no hosting target/project ID was found and deployment targets must not be invented. Set `CORS_ORIGIN` to the eventual frontend origin and rebuild with its public API URL.
 
-File: `.github/workflows/test.yml`
+## Operational Gaps
 
-Triggers:
-
-| Trigger | Status |
-| --- | --- |
-| `push` | Enabled |
-| `pull_request` | Enabled |
-| `workflow_dispatch` | Enabled |
-
-Jobs:
-
-| Job | Steps |
-| --- | --- |
-| Backend database and API | checkout, setup Node 24, `npm ci`, `npm test`, `docker compose config`, `docker build .` |
-| Foundry contracts | checkout submodules, install Foundry, `forge fmt --check` advisory, `forge build --sizes`, `forge test -vvv` |
-
-Backend tests include MongoDB Memory Server integration coverage for User, Conversation, Message, cursor pagination, message search, and MerkleCommit persistence.
-
-### Deploy Backend
-
-File: `.github/workflows/deploy.yml`
-
-Triggers:
-
-| Trigger | Behavior |
-| --- | --- |
-| Successful `CI` workflow on `main` | Attempts Render deploy |
-| Manual dispatch | Attempts Render deploy |
-
-If Render secrets are missing, the deploy step exits successfully without deploying.
-
-## Production Status
-
-| Area | Status |
-| --- | --- |
-| Render service definition | Not Found |
-| Atlas provisioning script | Not Found |
-| Frontend deployment | Blocked; frontend app and Vercel config are not in this repository |
-| Secret rotation procedure | Not Found |
-| Monitoring/log aggregation | Not Found |
-
-AI routes require `GEMINI_API_KEY` in Render before `/ai/summarize` or `/ai/moderate` can call Gemini. If moderation cannot reach Gemini within 2 seconds, the backend allows the message and returns `is_moderated: false`.
+* No Atlas provisioning/migration automation.
+* No secret rotation, metrics, tracing, or central log sink.
+* No frontend hosting workflow.
+* No committed frontend lockfile in the current environment.

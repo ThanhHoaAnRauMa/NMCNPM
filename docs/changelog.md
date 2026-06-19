@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-06-19
+
+Added:
+
+* React/Vite/Tailwind frontend with responsive auth, chat, profile/KYC, search, AI summary, and forensic verification views.
+* IndexedDB device-key storage and browser RSA-OAEP/AES-GCM/ECDSA message and file envelopes.
+* Canonical JWT-authenticated auth/user/chat/group/file/KYC routes and Socket.IO integration.
+* Conversation-list API, feature API integration tests, frontend unit test, frontend Docker image, and frontend CI job.
+
+Changed:
+
+* Consolidated runtime startup under `src/index.js`; `src/backend/server.js` is now a compatibility launcher.
+* Protected search and AI routes with JWT middleware.
+* Changed KYC submissions to `PENDING` instead of trusting clients as automatically verified.
+* Changed attachments to require an encrypted file envelope and encrypted blob.
+* Expanded `Message` with chat status, file, reply, local-delete, timestamp, and idempotency fields.
+* Added frontend service and authentication/file configuration to Docker Compose.
+
+Fixed:
+
+* Removed duplicated merge fragments that made feature backend files fail to parse.
+* Prevented Socket.IO identity spoofing through `user_online` and added membership checks.
+* Prevented unauthorized conversation history/file access and unsafe regex user search.
+* Forced feature models to share the root Mongoose connection.
+
+Removed:
+
+* Not Found.
+
 ## 2026-06-05
 
 Added:

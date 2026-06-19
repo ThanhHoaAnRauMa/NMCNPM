@@ -18,6 +18,14 @@ services:
       AI_MAX_SUMMARY_MESSAGES: ${AI_MAX_SUMMARY_MESSAGES:-100}
       AI_MAX_MESSAGE_CHARS: ${AI_MAX_MESSAGE_CHARS:-4000}
       AI_MAX_TOTAL_CHARS: ${AI_MAX_TOTAL_CHARS:-20000}
+      JWT_SECRET: ${JWT_SECRET:-local_access_secret_change_before_deploy}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-local_refresh_secret_change_before_deploy}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-10}
     depends_on:
       mongo:
         condition: service_healthy
@@ -29,6 +37,19 @@ services:
       start_period: 10s
     ports:
       - '${PORT:-3000}:${PORT:-3000}'
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+        VITE_CONTRACT_ADDRESS: ${VITE_CONTRACT_ADDRESS:-}
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - '${FRONTEND_PORT:-5173}:80'
 
   mongo:
     image: mongo:8.0

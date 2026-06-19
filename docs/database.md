@@ -2,7 +2,7 @@
 
 ## Overview
 
-MongoDB is accessed through Mongoose. The implemented models live in `src/db/models/`.
+MongoDB is accessed through one root Mongoose connection. Database/search/AI models live in `src/db/models/`; feature-route declarations live in `src/backend/src/models/` and resolve the root singleton through `src/backend/src/utils/mongoose.js`.
 
 The database stores account metadata, encrypted message payloads, KYC hashes, Merkle commit metadata, and temporary search snippets. It must not store message plaintext in the `Message` collection.
 
@@ -10,13 +10,15 @@ The database stores account metadata, encrypted message payloads, KYC hashes, Me
 
 | Mongoose Model | File | Collection Purpose |
 | --- | --- | --- |
-| `User` | `src/db/models/user.js` | User identity metadata and password hash |
-| `Conversation` | `src/db/models/conversation.js` | Direct/group conversation metadata |
-| `Message` | `src/db/models/message.js` | Encrypted message payloads and integrity metadata |
+| `User` | `src/backend/src/models/User.model.js` | Runtime account/profile/auth state and public key |
+| `Conversation` | `src/backend/src/models/Conversation.model.js` | Runtime direct/group metadata and last message |
+| `Message` | `src/db/models/message.js` | Canonical encrypted message, file, status, and integrity schema |
 | `MessageSearch` | `src/db/models/messageSearch.js` | Opt-in temporary plaintext snippets for search |
 | `AISummaryCache` | `src/db/models/aiSummaryCache.js` | Cached Gemini summaries without storing source plaintext |
 | `MerkleCommit` | `src/db/models/merkleCommit.js` | Merkle root and on-chain transaction metadata |
-| `KYCRecord` | `src/db/models/kycRecord.js` | KYC document hash/signature metadata |
+| `KYCRecord` | `src/backend/src/models/KYCRecord.model.js` | Runtime KYC proof submission |
+
+Parallel schema files remain for Week 1 database tests/backward compatibility. The canonical server import order intentionally uses the runtime files listed above. New code must not create a separate Mongoose connection or redefine a registered model.
 
 ## User
 
@@ -24,9 +26,13 @@ The database stores account metadata, encrypted message payloads, KYC hashes, Me
 | --- | --- | --- | --- |
 | `username` | String | Yes | Unique, trimmed, 3-64 chars |
 | `email` | String | Yes | Unique, lowercase, email regex |
-| `password` | String | Yes | Hashed before save, `select: false` |
-| `publicKey` | String | No | Max 8192 chars |
-| `kycStatus` | String enum | No | `unverified`, `pending`, `verified`, `rejected` |
+| `password` | String | Yes | bcrypt hash, `select: false` |
+| `publicKey` | String | No | Browser RSA/ECDSA public bundle, max 16384 chars |
+| `kycStatus` | String enum | No | Runtime values `NONE`, `PENDING`, `VERIFIED`, `REJECTED`; legacy lowercase values accepted |
+| `displayName`, `avatarUrl` | String | No | Public profile metadata |
+| `isOnline`, `lastSeen` | Boolean, Date | No | Presence metadata |
+| `blocklist` | ObjectId[] | No | Blocked users |
+| `loginAttempts`, `lockUntil` | Number, Date | No | Temporary login lock state |
 | timestamps | Date | Auto | `createdAt`, `updatedAt` |
 
 Indexes:
@@ -42,19 +48,20 @@ Indexes:
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `members` | ObjectId[] -> `User` | Yes | Must contain at least one unique user |
-| `type` | String enum | No | `direct`, `group`; default `direct` |
-| `name` | String | No | Max 128 chars |
+| `type` | String enum | Yes | Runtime values `DIRECT`, `GROUP` |
+| `groupName`, `groupAvatar` | String | No | Group display metadata |
 | `admins` | ObjectId[] -> `User` | No | Group admin metadata |
 | `createdBy` | ObjectId -> `User` | No | Creator metadata |
-| `mode` | String enum | No | `Standard`, `Privacy`; default `Standard` |
+| `mode` | String enum | No | `KYC`, `PRIVACY` |
+| `lastMessage` | ObjectId -> `Message` | No | Sidebar ordering/preview reference |
 | timestamps | Date | Auto | `createdAt`, `updatedAt` |
 
 Indexes:
 
 | Index | Purpose |
 | --- | --- |
-| `{ members: 1 }` | Membership lookup |
-| `{ updatedAt: -1 }` | Recent conversation ordering |
+| `{ members: 1, updatedAt: -1 }` | Membership and recent ordering |
+| `{ type: 1, members: 1 }` | Direct/group membership lookup |
 
 ## Message
 
@@ -67,6 +74,12 @@ Indexes:
 | `timestamp` | Date | Yes | Defaults to `Date.now` |
 | `contentHash` | String | No | SHA-256 hex; auto-derived from `encryptedContent` if missing |
 | `clientMessageId` | String | No | Idempotency key |
+| `msgType` | String enum | No | `TEXT`, `FILE`, `SYSTEM` |
+| `status` | String enum | No | `SENT`, `DELIVERED`, `SEEN` |
+| `fileUrl`, `fileName`, `fileMime`, `fileSizeBytes`, `filePublicId` | Mixed | No | Encrypted attachment blob and display metadata |
+| `replyTo` | ObjectId -> `Message` | No | Reply reference |
+| `deletedForSender` | Boolean | No | Sender-only UI hide; record remains |
+| timestamps | Date | Auto | `createdAt`, `updatedAt` plus forensic `timestamp` |
 
 Indexes:
 
@@ -76,6 +89,7 @@ Indexes:
 | `{ senderId: 1, timestamp: -1, _id: -1 }` | Sender history |
 | `{ conversationId: 1, senderId: 1, timestamp: -1, _id: -1 }` | Filtered chat history |
 | `{ senderId: 1, clientMessageId: 1 }` unique partial | Duplicate-send protection |
+| `{ conversationId: 1, msgType: 1, createdAt: -1, _id: -1 }` | Attachment history |
 
 ## MessageSearch
 
@@ -99,7 +113,7 @@ Indexes:
 | `{ conversationId: 1, createdAt: -1 }` | Filtered search |
 | `{ senderId: 1, createdAt: -1 }` | Sender-filtered search |
 
-Security note: Upload authorization is Not Implemented. The route currently validates shape only.
+Security note: root mounting applies JWT authentication. Search is restricted to conversations containing the authenticated user; snippet indexing also verifies sender identity and the source message.
 
 ## AISummaryCache
 
@@ -148,10 +162,10 @@ Indexes:
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `userId` | ObjectId -> `User` | Yes | User reference |
-| `hash` | String | Yes | SHA-256 hex, optional `0x` prefix |
+| `docHash` | String | Yes | SHA-256 hex submitted by client |
 | `signature` | String | Yes | Signature metadata |
-| `publicKey` | String | No | Public-key snapshot |
-| `status` | String enum | No | `pending`, `verified`, `rejected` |
+| `pubkey` | String | Yes | Public-key snapshot |
+| `status` | String enum | No | `PENDING`, `VERIFIED`, `REJECTED`; submission creates `PENDING` only |
 | `verifiedAt` | Date | No | Verification timestamp |
 | timestamps | Date | Auto | `createdAt`, `updatedAt` |
 
@@ -159,8 +173,7 @@ Indexes:
 
 | Index | Purpose |
 | --- | --- |
-| `{ userId: 1, createdAt: -1 }` | KYC audit history |
-| `{ hash: 1 }` | Hash lookup |
+| `{ userId: 1 }` unique | One active submission per user |
 
 ## Query Helpers
 

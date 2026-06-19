@@ -2,107 +2,95 @@
 
 ## Purpose
 
-Secure Chat Forensics is an educational secure messaging project that aims to combine encrypted messaging metadata, MongoDB persistence, and blockchain-backed forensic verification.
+Secure Chat Forensics is an educational secure messaging platform that combines client-side encrypted chat, MongoDB metadata persistence, AI-assisted moderation/summaries, and blockchain-backed forensic verification.
 
-The current repository is not a complete application. It contains:
+Code is the source of truth. Requirement documents describe planned scope and must not be treated as implemented behavior.
 
-| Area | Current State |
-| --- | --- |
-| Backend | Minimal Express and Socket.IO server |
-| Database | Mongoose schemas and message search support |
-| Blockchain | Foundry-based Solidity contract and tests |
-| Crypto | Standalone JavaScript crypto module |
-| DevOps | Docker, Docker Compose, GitHub Actions, Render trigger workflow |
-| Frontend | Not Implemented in this repository |
-| AI | Gemini summary and moderation routes implemented for opt-in plaintext |
+## Current State
 
-Code remains the source of truth. Planned features from requirement documents must not be treated as implemented unless source code exists.
+| Area | State | Primary Location |
+| --- | --- | --- |
+| Frontend | Implemented React/Vite/Tailwind app | `frontend/` |
+| Backend | One canonical Express/Socket.IO runtime | `src/index.js` |
+| Feature APIs | Auth, users, chat, groups, files, KYC | `src/backend/src/` |
+| Database/Search | Mongoose models, indexes, TTL search snippets | `src/db/` |
+| AI | Gemini moderation and opt-in summary | `src/routes/ai.js`, `src/services/` |
+| Crypto | Browser Web Crypto plus standalone Node module | `frontend/src/lib/crypto.js`, `src/crypto/` |
+| Blockchain | Foundry contract, deployment script, tests | `src/ForensisChat.sol`, `script/`, `test/` |
+| DevOps | Backend/frontend images, Compose, CI, Render backend trigger | `Dockerfile`, `frontend/Dockerfile`, `.github/` |
 
-## Current Architecture Summary
+## Runtime Summary
 
 ```mermaid
 flowchart LR
-  Client[Client or API consumer] --> Express[Express server]
-  Express --> Messages[/messages routes]
-  Express --> AI[/ai routes]
-  Express --> SocketIO[Socket.IO join/leave rooms]
-  Express --> Mongo[(MongoDB via Mongoose)]
-  Messages --> MessageSearch[(MessageSearch collection)]
-  AI --> AISummaryCache[(AISummaryCache collection)]
-  AI --> Gemini[Google Gemini API]
-  Foundry[Foundry tests/scripts] --> Contract[ForensisChat.sol]
+  Browser[React client] -->|JWT REST| API[Express API]
+  Browser -->|JWT Socket.IO| Socket[Chat socket]
+  Browser -->|Web Crypto| Keys[(IndexedDB device keys)]
+  Browser -->|ethers view call| Chain[ForensisChat / Sepolia]
+  API --> Mongo[(MongoDB)]
+  API --> Gemini[Google Gemini]
+  API --> Cloudinary[Encrypted file blobs]
+  Socket --> Mongo
 ```
 
-## Implemented Backend Surface
+The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-GCM encrypted; the AES key is wrapped for each conversation member. Only public key bundles are uploaded. KYC mode persists ciphertext; Privacy mode relays ciphertext without creating a `Message` record.
 
-| Component | Status | Notes |
-| --- | --- | --- |
-| `GET /healthz` | Implemented | Returns `{ ok: true, env }` |
-| `GET /health` | Implemented | Returns `{ status, uptime, timestamp }` for production health checks |
-| `POST /messages/search` | Implemented | Searches opt-in ephemeral snippets |
-| `POST /messages/index-snippet` | Implemented | Upserts one temporary snippet per message |
-| `POST /ai/summarize` | Implemented | Summarizes client-supplied decrypted plaintext and caches summary for 1 hour |
-| `POST /ai/moderate` | Implemented | Moderates plaintext before encryption; allows with `is_moderated: false` on Gemini failure |
-| Socket.IO `join` / `leave` | Implemented | Joins/leaves rooms by `conversationId` |
-| Authentication routes | Not Implemented | No `/auth/*` route files found |
-| User public-key routes | Not Implemented | No `/users/*` route files found |
-| KYC submission API | Not Implemented | Model exists only |
-| Merkle REST API | Not Implemented | Contract and model exist, no backend REST layer |
-| AI forensic analysis API | Not Implemented | Future AI endpoints beyond summarize/moderate |
+## Implemented User Flows
 
-## Completed Milestones
-
-| Milestone | Evidence |
+| Flow | Status |
 | --- | --- |
-| Database schema v1 | `src/db/models/*.js` |
-| Message search API | `src/routes/messages.js` |
-| Cursor query helper | `src/db/queries/messages.js` |
-| AI summary and moderation API | `src/routes/ai.js`, `src/services/` |
-| Docker and Compose | `Dockerfile`, `docker-compose.yml` |
-| CI and deploy workflows | `.github/workflows/test.yml`, `.github/workflows/deploy.yml` |
-| Backend unit and integration tests | `test/backend/*.test.js`; integration suite uses MongoDB Memory Server |
-| Database/DevOps/AI test case documentation | `doc/tuan-database-devops-ai-test-case.md` |
-| Solidity contract tests | `test/ForensisChat.t.sol` |
+| Register, login, refresh, logout, temporary account lock | Implemented |
+| Local device identity and public-key publication | Implemented |
+| User search, profile update, block/unblock | Implemented |
+| Direct conversations and group administration | Implemented |
+| JWT-authenticated realtime encrypted chat | Implemented |
+| Delivered/seen, typing, missed-message recovery | Implemented |
+| Encrypted attachment upload/download | Implemented; requires Cloudinary |
+| Opt-in 24-hour search snippets | Implemented; disabled by default in UI |
+| Gemini moderation before encryption | Implemented with allow-on-provider-failure policy |
+| Gemini conversation summary | Implemented only for explicit client-supplied plaintext |
+| KYC proof submission | Implemented as `PENDING`; reviewer workflow is missing |
+| On-chain Merkle proof verification | Implemented in frontend when contract address/proof are supplied |
 
-## Pending Milestones
+## Technical Constraints
 
-| Area | Missing Implementation |
+| Constraint | Handling |
 | --- | --- |
-| Auth | Register, login, logout, refresh, JWT middleware |
-| Authorization | Route-level user/conversation access checks |
-| Chat Service | Message persistence and real-time send/deliver/seen flows |
-| KYC | `/kyc/submit` API and review workflow |
-| Blockchain backend | REST endpoints for commit, verify, dispute, forensics |
-| AI | Future forensic analysis endpoints beyond summary/moderation |
-| Frontend | React/Vite app is not present |
-| API docs | Swagger/OpenAPI files are not present |
+| Primary message plaintext must not reach MongoDB | `Message` stores encrypted envelopes and signatures only |
+| Browser private keys must not reach backend | Stored in IndexedDB; API receives public bundle only |
+| Search and AI need plaintext | Explicit client opt-in; snippets expire after 24h; AI source plaintext is not stored |
+| Feature models must use canonical DB connection | CommonJS models resolve the root Mongoose singleton through `utils/mongoose.js` |
+| Existing database contracts must remain readable | Canonical models accept the existing collection names and preserve existing fields |
+| Frontend production target is not selected | CI builds the image; deployment remains unconfigured |
 
-## Active Technical Constraints
+## Remaining Work / Blockers
 
-| Constraint | Current Handling |
+| Area | Gap |
 | --- | --- |
-| Do not store message plaintext in `Message` | `Message` stores `encryptedContent`, `signature`, hashes, and metadata |
-| Server-side search cannot search ciphertext | `MessageSearch` stores opt-in snippets with 24h TTL |
-| Server-side AI cannot read ciphertext | `/ai/summarize` and `/ai/moderate` require explicit client-supplied plaintext and do not persist it |
-| Secrets must not be committed | `.env` ignored; `.env.example` contains placeholders |
-| MongoDB compatibility | Mongoose models use ObjectId references and indexes |
-| Blockchain compatibility | Database has `MerkleCommit`; backend REST integration is missing |
+| KYC | No reviewer/admin API, document provider, rejection workflow, or verified-at authority |
+| Forensics | No backend proof generation, periodic root commit worker, dispute API, or evidence export package |
+| Multi-device crypto | No private-key backup/recovery or trusted-device transfer |
+| Privacy mode | Ephemeral delivery has no offline recovery by design |
+| Attachments | Requires Cloudinary credentials and browser CORS access to encrypted blobs |
+| Deployment | Backend Render secrets and a frontend hosting target must be configured externally |
+| Operations | No Atlas automation, secret rotation workflow, metrics, tracing, or centralized logs |
+| Dependency lock | `frontend/package-lock.json` has not been generated in this environment; CI currently installs from pinned semver ranges |
 
-## Known Issues
+## Validation Entry Points
 
-| Issue | Status |
-| --- | --- |
-| `forge fmt --check` reports formatting drift in Solidity files | Known; CI treats it as advisory |
-| `AGENTS.md` may be untracked locally | Observed during documentation task; not modified |
-| `lib/*` submodules may show local state changes after Foundry commands | Observed locally; not part of documentation changes |
-| Some older docs under `doc/` and `docs/requirements/` are design/spec material, not implementation truth | Documented here to avoid confusion |
-| Frontend/Vercel deployment is blocked in this repository | Frontend app and Vercel config are not present |
+```bash
+npm ci
+npm ci --prefix src/backend
+npm test
+npm install --prefix frontend
+npm --prefix frontend run check
+docker compose config
+docker compose build
+forge test
+```
 
-## Startup Procedure for Future AI Sessions
+## Future Session Startup
 
 1. Read `AGENTS.md`.
-2. Read this file.
-3. Read `docs/changelog.md`.
-4. Read `docs/decisions.md`.
-5. Read the specific docs file for the task area.
-6. Read source code only where docs are insufficient.
+2. Read this file, `docs/changelog.md`, and `docs/decisions.md`.
+3. Read only task-relevant docs and source.

@@ -1,238 +1,154 @@
 # API
 
-## Overview
+## Conventions
 
-The current backend exposes a minimal Express API plus basic Socket.IO room events. There is no OpenAPI/Swagger document in the repository.
+Local base URL: `http://localhost:3000`.
 
-Base URL in local development:
+Protected routes require:
 
-```text
-http://localhost:3000
+```http
+Authorization: Bearer <accessToken>
 ```
+
+Feature responses generally use `{ "success": true, ... }`. Search/AI routes keep their earlier response contracts. Errors include `message` or `error`; clients must use HTTP status as the primary signal.
+
+Auth endpoints, search, and AI use in-memory per-instance rate limits and return `429` with `Retry-After` when exceeded.
+
+## Health
+
+| Method | Path | Auth | Response |
+| --- | --- | --- | --- |
+| GET | `/health` | No | `{ status, uptime, timestamp }` |
+| GET | `/healthz` | No | `{ ok, env }` |
 
 ## Authentication
 
-Authentication is Not Implemented.
-
-Current routes do not require JWT or session credentials. This is a security gap for routes that write or search `MessageSearch` snippets and AI routes that receive opt-in plaintext.
-
-## HTTP Endpoints
-
-### `GET /health`
-
-Production health endpoint used by deployment health checks.
-
-Response `200`:
-
-```json
-{
-  "status": "ok",
-  "uptime": 12.345,
-  "timestamp": "2026-06-05T00:00:00.000Z"
-}
-```
-
-### `GET /healthz`
-
-Returns backend health and environment.
-
-Response `200`:
-
-```json
-{
-  "ok": true,
-  "env": "development"
-}
-```
-
-This endpoint remains for backward compatibility.
-
-### `POST /messages/search`
-
-Searches the temporary `MessageSearch` collection with MongoDB text search.
-
-Request body:
-
-| Field | Type | Required | Notes |
+| Method | Path | Auth | Body / Notes |
 | --- | --- | --- | --- |
-| `keyword` | String | Yes | Trimmed; max 200 chars |
-| `dateFrom` | Date string | No | Filters `createdAt >= dateFrom` |
-| `dateTo` | Date string | No | Filters `createdAt <= dateTo` |
-| `senderId` | ObjectId string | No | Sender filter |
-| `conversationId` | ObjectId string | No | Conversation filter |
-| `limit` | Number | No | Defaults to 20; max 100 |
+| POST | `/auth/register` | No | `{ username, email, password }`; password 8-72 chars |
+| POST | `/auth/login` | No | `{ email, password }`; locks for 15 minutes after 5 failed attempts |
+| POST | `/auth/refresh` | No | `{ refreshToken }`; returns a new access/refresh pair |
+| POST | `/auth/logout` | JWT | Marks account offline; server-side token revocation is not implemented |
 
-Response `200`:
+Successful register/login response:
 
 ```json
 {
-  "results": [
-    {
-      "_id": "ObjectId",
-      "messageId": "ObjectId",
-      "conversationId": "ObjectId",
-      "senderId": "ObjectId",
-      "snippet": "searchable text",
-      "score": 1.5,
-      "createdAt": "2026-06-04T00:00:00.000Z",
-      "highlightedSnippet": "<em>searchable</em> text"
-    }
-  ]
+  "success": true,
+  "user": { "id": "...", "username": "alice", "email": "alice@example.com", "kycStatus": "NONE" },
+  "accessToken": "...",
+  "refreshToken": "..."
 }
 ```
 
-Errors:
+## Users and Conversations
 
-| Status | Condition |
-| --- | --- |
-| `400` | Missing/empty `keyword` |
-| `400` | `keyword` over 200 chars |
-| `400` | Invalid ObjectId filter |
-| `400` | Invalid date |
-| `400` | `dateFrom` after `dateTo` |
-| `500` | Unexpected server error |
+| Method | Path | Body / Query | Purpose |
+| --- | --- | --- | --- |
+| GET | `/users/me` | None | Current profile |
+| PUT | `/users/profile` | `{ displayName?, avatarUrl? }` | Update public profile |
+| GET | `/users/search?q=...` | Query length 2-80 | Search username/email/display name |
+| POST | `/users/pubkey` | `{ publicKey }` | Store browser public-key bundle |
+| GET | `/users/:id/pubkey` | None | Read a member public-key bundle |
+| POST | `/users/:id/block` | None | Block user |
+| POST | `/users/:id/unblock` | None | Unblock user |
+| POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find or create direct conversation |
+| GET | `/chat/conversations` | None | List member conversations with members and last message |
+| GET | `/chat/:conversationId/messages?before=&limit=` | Limit 1-100 | Cursor history; membership required |
+| DELETE | `/chat/messages/:messageId` | None | Sender-only local-hide flag; does not delete forensic record |
+
+## Groups
+
+| Method | Path | Body | Purpose |
+| --- | --- | --- | --- |
+| POST | `/groups` | `{ name, memberIds, mode? }` | Create group; creator becomes admin |
+| GET | `/groups` | None | List current user's groups |
+| PATCH | `/groups/:id` | `{ name?, avatarUrl? }` | Admin updates group metadata |
+| POST | `/groups/:id/members` | `{ userId }` | Admin adds member |
+| DELETE | `/groups/:id/members/:userId` | None | Admin removes member or member leaves |
+| POST | `/groups/:id/admins` | `{ userId }` | Promote existing member |
+
+## Encrypted Files
+
+`POST /files/upload` uses `multipart/form-data` and requires membership.
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `file` | Yes | AES-GCM encrypted blob; maximum configured by `MAX_FILE_SIZE_MB` |
+| `conversationId` | Yes | Target conversation |
+| `encryptedContent` | Yes | Signed JSON file envelope with version, IV, and wrapped keys |
+| `signature` | Yes | Sender ECDSA signature over envelope |
+| `originalName`, `originalMime` | No | Display metadata only |
+| `tempId` | No | Client idempotency identifier |
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/files/:conversationId?type=&before=&limit=` | List encrypted attachment messages |
+| GET | `/files/:conversationId/jump/:messageId` | Resolve attachment to source message metadata |
+
+Cloudinary stores ciphertext. The browser downloads and decrypts it locally.
+
+## KYC
+
+| Method | Path | Body / Result |
+| --- | --- | --- |
+| POST | `/kyc/submit` | `{ hash, signature, pubkey }`; creates `PENDING`, never auto-verifies |
+| GET | `/kyc/status` | Current user's status |
+| GET | `/kyc/status/:userId` | Authenticated status lookup |
+
+An administrative review API is **Not Implemented**.
+
+## Temporary Message Search
 
 ### `POST /messages/index-snippet`
 
-Upserts one temporary search snippet for a message.
+Opt-in body: `{ messageId, conversationId, senderId, snippet }`. Snippet max is 2000 characters and expires after 24 hours. Response `201`: `{ "id": "..." }`.
 
-Request body:
+### `POST /messages/search`
 
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `messageId` | ObjectId string | Yes | Unique per snippet |
-| `conversationId` | ObjectId string | Yes | Conversation reference |
-| `senderId` | ObjectId string | Yes | Sender reference |
-| `snippet` | String | Yes | Trimmed; max 2000 chars |
+| Field | Required | Notes |
+| --- | --- | --- |
+| `keyword` | Yes | 1-200 chars |
+| `conversationId`, `senderId` | No | ObjectId filters |
+| `dateFrom`, `dateTo` | No | Valid date range |
+| `limit` | No | Default 20, max 100 |
 
-Response `201`:
+Response: `{ "results": [{ messageId, conversationId, senderId, snippet, score, createdAt, highlightedSnippet }] }`. Highlight HTML is escaped before `<em>` tags are inserted.
 
-```json
-{
-  "id": "ObjectId"
-}
-```
-
-Errors:
-
-| Status | Condition |
-| --- | --- |
-| `400` | Missing required field |
-| `400` | Invalid ObjectId |
-| `400` | `snippet` over 2000 chars |
-| `500` | Unexpected server error |
-
-Security note: This endpoint accepts opt-in plaintext snippets. Authorization is Not Implemented and must be added before production use.
-
-### `POST /ai/summarize`
-
-Summarizes client-supplied plaintext that was decrypted locally by the client. The backend verifies that each `messageId` exists in the requested conversation, calls Gemini, and caches the returned summary for 1 hour.
-
-The `Message` collection remains ciphertext-only. Plaintext from this request is not persisted.
-
-Request body:
-
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `conversationId` | ObjectId string | Yes | Conversation containing the messages |
-| `messageIds` | ObjectId string[] | No | If omitted, derived from `messages[].messageId`; order controls summary order |
-| `messages` | Object[] | Yes | Opt-in plaintext payload from the client |
-| `messages[].messageId` | ObjectId string | Yes | Must belong to `conversationId` |
-| `messages[].text` | String | Yes | Decrypted plaintext; max 4000 chars per message |
-| `messages[].senderId` | ObjectId string | No | Client hint only; DB metadata wins when present |
-| `messages[].timestamp` | Date string | No | Client hint only; DB metadata wins when present |
-
-Response `200`:
-
-```json
-{
-  "summary": "Short conversation summary",
-  "cached": false,
-  "model": "gemini-2.5-flash",
-  "expiresAt": "2026-06-04T01:00:00.000Z",
-  "messageCount": 3
-}
-```
-
-Errors:
-
-| Status | Condition |
-| --- | --- |
-| `400` | Invalid ObjectId, missing plaintext messages, too many messages, or text too large |
-| `404` | One or more messages are not found in the conversation |
-| `503` | Gemini API key is missing or Gemini is unavailable |
+## AI
 
 ### `POST /ai/moderate`
 
-Moderates one plaintext message before the client encrypts and sends it. Gemini has a maximum moderation timeout of 2 seconds. If Gemini is unavailable or times out, the backend allows the message and marks moderation as unavailable.
+Body: `{ "text": "plaintext before encryption" }`, max 4000 chars.
 
-Request body:
+* `200`: allowed or provider-unavailable fallback.
+* `422`: `{ error: "message_blocked", moderation }`.
+* Provider failure allows the message with `is_moderated: false`; this policy is explicit, not a successful moderation result.
 
-| Field | Type | Required | Notes |
-| --- | --- | --- | --- |
-| `text` | String | Yes | Plaintext message; max 4000 chars |
+### `POST /ai/summarize`
 
-Allowed response `200`:
-
-```json
-{
-  "moderation": {
-    "is_moderated": true,
-    "allowed": true,
-    "harmful": false,
-    "categories": [],
-    "warning": ""
-  }
-}
-```
-
-Blocked response `422`:
+Body:
 
 ```json
 {
-  "error": "message_blocked",
-  "moderation": {
-    "is_moderated": true,
-    "allowed": false,
-    "harmful": true,
-    "categories": ["harassment"],
-    "warning": "Message blocked by AI moderation."
-  }
+  "conversationId": "...",
+  "messageIds": ["..."],
+  "messages": [{ "messageId": "...", "text": "client-decrypted plaintext" }]
 }
 ```
 
-Fallback response `200`:
+The backend verifies every message belongs to the conversation, sends explicit plaintext to Gemini, and caches only the summary for one hour. Maximums are controlled by `AI_MAX_*` variables. Privacy-mode messages are not persisted and cannot use this endpoint.
 
-```json
-{
-  "moderation": {
-    "is_moderated": false,
-    "allowed": true,
-    "harmful": false,
-    "categories": [],
-    "warning": "",
-    "error": "moderation_unavailable"
-  }
-}
-```
+## Realtime
 
-## Socket.IO Events
+Connect Socket.IO with `auth: { token: accessToken }`. Main client events are `join_conversation`, `leave_conversation`, `send_message`, `send_private_message`, `ack_private_message`, `mark_seen`, `typing`, `stop_typing`, and `get_missed_messages`. See `docs/websocket-events.md` for payloads and errors.
 
-| Event | Payload | Direction | Status |
-| --- | --- | --- | --- |
-| `join` | `{ "conversationId": "..." }` | client -> server | Implemented |
-| `leave` | `{ "conversationId": "..." }` | client -> server | Implemented |
-| encrypted message send | Not Found | client -> server | Not Implemented |
-| delivered/seen status | Not Found | both | Not Implemented |
+## Not Implemented
 
-## Planned But Not Implemented APIs
-
-| API Area | Expected Route Examples | Current Status |
-| --- | --- | --- |
-| Auth | `/auth/register`, `/auth/login`, `/auth/logout`, `/auth/refresh` | Not Implemented |
-| User public key | `/users/pubkey`, `/users/:id/pubkey` | Not Implemented |
-| KYC | `/kyc/submit` | Not Implemented |
-| Files | `/files/upload` | Not Implemented |
-| AI forensic analysis | Future endpoints beyond summarize/moderate | Not Implemented |
-| Blockchain | `/merkle/commit`, `/merkle/verify/:conversationId/:leafIndex`, `/merkle/dispute` | Not Implemented |
-| Forensics | `/forensics/:conversationId` | Not Implemented |
+| API | Status |
+| --- | --- |
+| KYC reviewer/admin decision | Not Implemented |
+| Merkle commit/proof-generation/dispute REST API | Not Implemented |
+| Evidence transcript export | Not Implemented |
+| Refresh-token revocation/session inventory | Not Implemented |
+| OpenAPI/Swagger specification | Not Found; `docs/api/auth.json` is a small Postman collection only |

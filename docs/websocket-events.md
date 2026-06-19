@@ -1,108 +1,61 @@
-# WebSocket Events — SecureChat
+# WebSocket Events
 
-## Kết nối
+## Connection
 
 ```javascript
-import { io } from "socket.io-client";
-
 const socket = io(import.meta.env.VITE_API_URL, {
-  auth: { token: accessToken },
-});
+  auth: { token: accessToken }
+})
 ```
 
----
+The handshake JWT determines `socket.userId`. Emitting `user_online` cannot change identity. Invalid or expired tokens fail with connection error data `{ code: "SOCKET_UNAUTHORIZED" }`.
 
-## Events CLIENT → SERVER (client gửi lên)
+## Client to Server
 
-| Event                  | Payload                                                                     | Mô tả                                   |
-| ---------------------- | --------------------------------------------------------------------------- | --------------------------------------- |
-| `user_online`          | `{ userId }`                                                                | Gửi sau khi đăng nhập để đăng ký socket |
-| `join_conversation`    | `{ conversationId }`                                                        | Vào room khi mở cuộc hội thoại          |
-| `leave_conversation`   | `{ conversationId }`                                                        | Rời room khi đóng                       |
-| `send_message`         | `{ conversationId, encryptedContent, signature, msgType, replyTo, tempId }` | Gửi tin nhắn thường (KYC mode)          |
-| `send_private_message` | `{ conversationId, encryptedContent, signature, tempId }`                   | Gửi tin nhắn Privacy Mode               |
-| `ack_private_message`  | `{ tempId }`                                                                | Xác nhận đã nhận tin nhắn Privacy Mode  |
-| `mark_seen`            | `{ messageId, conversationId }`                                             | Đánh dấu đã đọc                         |
-| `typing`               | `{ conversationId }`                                                        | Đang gõ chữ                             |
-| `stop_typing`          | `{ conversationId }`                                                        | Dừng gõ                                 |
+| Event | Payload | Behavior |
+| --- | --- | --- |
+| `join_conversation` / `join` | `{ conversationId }` | Membership check, then join room |
+| `leave_conversation` / `leave` | `{ conversationId }` | Leave room |
+| `send_message` | `{ conversationId, encryptedContent, signature, msgType?, replyTo?, tempId? }` | Persist KYC-mode ciphertext |
+| `send_private_message` | `{ conversationId, encryptedContent, signature, tempId }` | Relay Privacy-mode ciphertext without persistence |
+| `ack_private_message` | `{ tempId }` | Clear relay tracking after two participant ACKs |
+| `mark_seen` | `{ messageId, conversationId }` | Member-only seen update |
+| `typing` / `stop_typing` | `{ conversationId }` | Relay only after authorized room join |
+| `get_missed_messages` | `{ conversationId, since }` | Return up to 100 persisted messages after timestamp |
+| `user_online` | None needed | Compatibility status echo only; does not authenticate |
 
----
+`encryptedContent` is capped at 100,000 characters. `tempId` participates in sender-side duplicate protection for persisted messages.
 
-## Events SERVER → CLIENT (server gửi xuống)
+## Server to Client
 
-| Event                  | Payload                                                                                                       | Mô tả                                   |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| `new_message`          | `{ _id, conversationId, senderId, encryptedContent, signature, msgType, status, replyTo, createdAt, tempId }` | Tin nhắn mới trong room                 |
-| `new_private_message`  | `{ tempId, conversationId, senderId, encryptedContent, signature, createdAt }`                                | Tin nhắn Privacy Mode                   |
-| `private_message_sent` | `{ tempId }`                                                                                                  | Confirm đã relay tin nhắn Privacy Mode  |
-| `message_status`       | `{ messageId, status, seenBy? }`                                                                              | Cập nhật trạng thái SENT/DELIVERED/SEEN |
-| `message_error`        | `{ tempId?, error }`                                                                                          | Lỗi khi gửi tin nhắn                    |
-| `user_typing`          | `{ userId, conversationId }`                                                                                  | Người kia đang gõ                       |
-| `user_stop_typing`     | `{ userId, conversationId }`                                                                                  | Người kia dừng gõ                       |
-| `user_status`          | `{ userId, isOnline, lastSeen? }`                                                                             | Trạng thái online/offline của user khác |
+| Event | Important Fields |
+| --- | --- |
+| `new_message` | `_id`, `conversationId`, `senderId`, encrypted payload/signature, type/status/timestamps, `tempId` |
+| `new_private_message` | `tempId`, conversation/sender ids, encrypted payload/signature, `createdAt` |
+| `private_message_sent` | `tempId` |
+| `message_status` | `messageId`, `SENT | DELIVERED | SEEN`, `seenBy?` |
+| `user_typing` / `user_stop_typing` | `userId`, `conversationId` |
+| `user_status` | `userId`, `isOnline`, `lastSeen?`, `reason?` |
+| `missed_messages` | `conversationId`, `messages`, `count` |
+| `socket_error` | `event`, `code`, `message`, optional `tempId` |
 
----
+## Error Codes
 
-## Luồng gửi tin nhắn thường (KYC Mode)
+| Code | Meaning |
+| --- | --- |
+| `SOCKET_UNAUTHORIZED` | Handshake JWT invalid/missing |
+| `MISSING_CONVERSATION_ID`, `MISSING_REQUIRED_FIELDS` | Invalid payload |
+| `NOT_A_MEMBER` | Conversation missing or access denied |
+| `USE_PRIVATE_EVENT`, `INVALID_PRIVACY_CONVERSATION` | Wrong mode/event |
+| `BLOCKED_BY_RECEIVER` | Recipient blocked sender |
+| `MESSAGE_TOO_LARGE` | Encrypted envelope exceeds limit |
+| `SIGNATURE_TOO_LARGE` | Signature exceeds 16 KiB |
+| `DUPLICATE_MESSAGE` | Reused sender/temp id |
+| `MESSAGE_NOT_FOUND` | Seen target missing |
+| `INVALID_REQUEST`, `SERVER_ERROR` | Invalid recovery request or internal failure |
 
----
+## Persistence Rules
 
-## Cập nhật tuần 4 — SCRUM-130: Error codes và Offline handling
-
-### Event server → client: `socket_error`
-
-Khi có lỗi trong bất kỳ event nào, server emit `socket_error` với format thống nhất:
-
-```javascript
-socket.on("socket_error", ({ event, code, message, ...extra }) => {
-  console.error(`[Socket Error] ${event}: ${code} — ${message}`);
-  switch (code) {
-    case "NOT_AUTHENTICATED":
-    case "TOKEN_EXPIRED":
-      redirectToLogin();
-      break;
-    case "ACCOUNT_LOCKED":
-      showLockMessage(extra.remainingMin);
-      break;
-    case "NOT_A_MEMBER":
-    case "CONVERSATION_NOT_FOUND":
-      showErrorToast(message);
-      break;
-    case "USE_PRIVATE_EVENT":
-      usePrivateMessageEvent();
-      break;
-    default:
-      showErrorToast(message);
-  }
-});
-```
-
-### Tất cả error codes
-
-| Code                      | HTTP tương đương | Ý nghĩa                           |
-| ------------------------- | ---------------- | --------------------------------- |
-| `MISSING_REQUIRED_FIELDS` | 400              | Thiếu field bắt buộc              |
-| `NOT_AUTHENTICATED`       | 401              | Chưa emit user_online             |
-| `NOT_A_MEMBER`            | 403              | Không có quyền trong conversation |
-| `CONVERSATION_NOT_FOUND`  | 404              | Conversation không tồn tại        |
-| `USE_PRIVATE_EVENT`       | 422              | Dùng sai event cho Privacy Mode   |
-| `SERVER_ERROR`            | 500              | Lỗi server không xác định         |
-| `BLOCKED_BY_RECEIVER`     | 403              | Người nhận đã block bạn           |
-
-### Event: `get_missed_messages` (reconnect)
-
-```javascript
-socket.on("connect", () => {
-  const lastMessageTime = localStorage.getItem("lastMessageTime");
-  if (lastMessageTime) {
-    socket.emit("get_missed_messages", {
-      conversationId: currentConvId,
-      since: lastMessageTime,
-    });
-  }
-});
-
-socket.on("missed_messages", ({ conversationId, messages, count }) => {
-  mergeMessages(messages);
-});
-```
+* KYC mode: ciphertext/signature are stored and available through HTTP history/recovery.
+* Privacy mode: payload is memory-relayed only; offline recovery and AI summary are unavailable.
+* Attachments use authenticated HTTP upload, then the server emits `new_message` to the room.
