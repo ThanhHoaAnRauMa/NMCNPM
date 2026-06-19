@@ -1,22 +1,16 @@
 const express = require("express");
-const router = express.Router();
-const userCtrl = require("../controllers/user.controller");
+const userController = require("../controllers/user.controller");
 const { verifyToken } = require("../middleware/auth.middleware");
 
-router.post("/pubkey", verifyToken, userCtrl.uploadPublicKey);
+const router = express.Router();
 
-router.get("/:id/pubkey", userCtrl.getPublicKey);
-
-router.post("/:id/block", verifyToken, userCtrl.blockUser);
-
-router.post("/:id/unblock", verifyToken, userCtrl.unblockUser);
-router.get("/:id/pubkey", userCtrl.getPublicKey);
-router.get("/me", verifyToken, userCtrl.getMyProfile);
-router.put("/profile", verifyToken, userCtrl.updateProfile);
-router.get("/search", verifyToken, userCtrl.searchUsers);
-router.post("/pubkey", verifyToken, userCtrl.uploadPublicKey);
-router.post("/:id/block", verifyToken, userCtrl.blockUser);
-router.post("/:id/unblock", verifyToken, userCtrl.unblockUser);
-router.post("/:id/conversation", verifyToken, userCtrl.startDirectConversation);
+router.get("/me", verifyToken, userController.getMyProfile);
+router.get("/search", verifyToken, userController.searchUsers);
+router.put("/profile", verifyToken, userController.updateProfile);
+router.post("/pubkey", verifyToken, userController.uploadPublicKey);
+router.get("/:id/pubkey", verifyToken, userController.getPublicKey);
+router.post("/:id/block", verifyToken, userController.blockUser);
+router.post("/:id/unblock", verifyToken, userController.unblockUser);
+router.post("/:id/conversation", verifyToken, userController.startDirectConversation);
 
 module.exports = router;

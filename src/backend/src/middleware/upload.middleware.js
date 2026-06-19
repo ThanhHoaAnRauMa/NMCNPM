@@ -1,10 +1,8 @@
 const multer = require("multer");
 
-const storage = multer.memoryStorage();
-
-const ALLOWED_MIME_TYPES = [
+const ALLOWED_MIME_TYPES = new Set([
+  "application/octet-stream",
   "image/jpeg",
-  "image/jpg",
   "image/png",
   "image/gif",
   "image/webp",
@@ -15,24 +13,15 @@ const ALLOWED_MIME_TYPES = [
   "video/quicktime",
   "audio/mpeg",
   "audio/wav",
-];
+]);
 
-const fileFilter = (req, file, cb) => {
-  if (ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    cb(new Error(`Loại file không được hỗ trợ: ${file.mimetype}`), false);
-  }
-};
+const maxSizeMb = Number.parseInt(process.env.MAX_FILE_SIZE_MB || "10", 10);
 
-const MAX_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB || "10");
-
-const upload = multer({
-  storage,
-  fileFilter,
-  limits: {
-    fileSize: MAX_SIZE_MB * 1024 * 1024,
+module.exports = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (_req, file, callback) => {
+    if (ALLOWED_MIME_TYPES.has(file.mimetype)) return callback(null, true);
+    return callback(new Error(`File type is not supported: ${file.mimetype}`), false);
   },
+  limits: { fileSize: maxSizeMb * 1024 * 1024 },
 });
-
-module.exports = upload;

@@ -109,6 +109,15 @@ function buildCacheKey({ conversationId, messageIds, messages, model }) {
     .digest('hex')
 }
 
+async function assertConversationMembership(req, conversationId) {
+  if (!req.userId) return
+  const member = await mongoose.connection.collection('conversations').findOne({
+    _id: conversationId,
+    members: toObjectId(req.userId, 'authenticated user'),
+  }, { projection: { _id: 1 } })
+  if (!member) throw requestError('conversation access denied', 403)
+}
+
 async function fetchMessageMetadata({ MessageModel, conversationId, messageObjectIds }) {
   const docs = await MessageModel.find({
     _id: { $in: messageObjectIds },
@@ -138,6 +147,7 @@ export function createAiRouter({
   router.post('/summarize', async (req, res) => {
     try {
       const payload = normalizeSummaryPayload(req.body)
+      await assertConversationMembership(req, payload.conversationId)
       const messageMetadata = await fetchMessageMetadata({
         MessageModel,
         conversationId: payload.conversationId,

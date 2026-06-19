@@ -1,145 +1,107 @@
+const mongoose = require("../utils/mongoose");
 const Conversation = require("../models/Conversation.model");
+const User = require("../models/User.model");
+
+function validId(value) {
+  return mongoose.Types.ObjectId.isValid(value);
+}
+
+function isAdmin(group, userId) {
+  return group.admins.some((id) => id.toString() === userId);
+}
 
 exports.createGroup = async (req, res) => {
   try {
-    const { name, memberIds } = req.body;
-    const creatorId = req.userId;
-
-    if (!name || !memberIds || memberIds.length < 1) {
-      return res.status(400).json({
-        success: false,
-        message: "Cần có tên nhóm và ít nhất 1 thành viên khác.",
-      });
+    const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+    const memberIds = Array.isArray(req.body.memberIds) ? req.body.memberIds : [];
+    if (!name || name.length > 128 || !memberIds.length || memberIds.length > 99 || memberIds.some((id) => !validId(id))) {
+      return res.status(400).json({ success: false, message: "A group name and 1 to 99 valid members are required." });
     }
-
-    const allMembers = [...new Set([creatorId, ...memberIds])];
-
-    const group = await Conversation.create({
-      type: "GROUP",
-      mode: "KYC",
-      members: allMembers,
-      groupName: name,
-      createdBy: creatorId,
-      admins: [creatorId],
-    });
-
+    const members = [...new Set([req.userId, ...memberIds])];
+    if ((await User.countDocuments({ _id: { $in: members } })) !== members.length) {
+      return res.status(400).json({ success: false, message: "One or more members do not exist." });
+    }
+    const mode = req.body.mode === "PRIVACY" ? "PRIVACY" : "KYC";
+    const group = await Conversation.create({ type: "GROUP", mode, members, groupName: name, createdBy: req.userId, admins: [req.userId] });
     return res.status(201).json({ success: true, group });
-  } catch (err) {
-    console.error("[createGroup]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+  } catch (error) {
+    console.error("[createGroup]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+exports.getMyGroups = async (req, res) => {
+  try {
+    const groups = await Conversation.find({ type: { $in: ["GROUP", "group"] }, members: req.userId })
+      .populate("members", "username displayName avatarUrl isOnline kycStatus publicKey")
+      .populate("lastMessage")
+      .sort({ updatedAt: -1 })
+      .lean();
+    return res.json({ success: true, groups });
+  } catch (error) {
+    console.error("[getMyGroups]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+exports.updateGroup = async (req, res) => {
+  try {
+    const group = await Conversation.findById(req.params.id);
+    if (!group || !isAdmin(group, req.userId)) return res.status(403).json({ success: false, message: "Group admin access required." });
+    if (typeof req.body.name === "string") group.groupName = req.body.name.trim().slice(0, 128);
+    if (typeof req.body.avatarUrl === "string") group.groupAvatar = req.body.avatarUrl.trim().slice(0, 2048) || null;
+    await group.save();
+    return res.json({ success: true, group });
+  } catch (error) {
+    console.error("[updateGroup]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.addMember = async (req, res) => {
   try {
     const group = await Conversation.findById(req.params.id);
-    if (!group || group.type !== "GROUP") {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy nhóm." });
+    if (!group || !isAdmin(group, req.userId)) return res.status(403).json({ success: false, message: "Group admin access required." });
+    if (!validId(req.body.userId) || !(await User.exists({ _id: req.body.userId }))) {
+      return res.status(400).json({ success: false, message: "Valid userId is required." });
     }
-
-    const isAdmin = group.admins.some((a) => a.toString() === req.userId);
-    if (!isAdmin) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Chỉ admin mới được thêm thành viên.",
-        });
-    }
-
-    const { userId } = req.body;
-    await Conversation.findByIdAndUpdate(req.params.id, {
-      $addToSet: { members: userId },
-    });
-
-    return res
-      .status(200)
-      .json({ success: true, message: "Đã thêm thành viên." });
-  } catch (err) {
-    console.error("[addMember]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    await Conversation.findByIdAndUpdate(group._id, { $addToSet: { members: req.body.userId } });
+    return res.json({ success: true, message: "Member added." });
+  } catch (error) {
+    console.error("[addMember]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.removeMember = async (req, res) => {
   try {
     const group = await Conversation.findById(req.params.id);
-    if (!group || group.type !== "GROUP") {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy nhóm." });
+    if (!group) return res.status(404).json({ success: false, message: "Group not found." });
+    const removingSelf = req.params.userId === req.userId;
+    if (!removingSelf && !isAdmin(group, req.userId)) return res.status(403).json({ success: false, message: "Group admin access required." });
+    const targetIsLastAdmin = group.admins.length === 1 && group.admins[0].toString() === req.params.userId;
+    if (targetIsLastAdmin && group.members.length > 1) {
+      return res.status(400).json({ success: false, message: "Promote another admin before the last admin leaves." });
     }
-
-    const targetId = req.params.userId;
-    const isSelf = targetId === req.userId;
-    const isAdmin = group.admins.some((a) => a.toString() === req.userId);
-
-    if (!isSelf && !isAdmin) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Chỉ admin mới được xóa thành viên.",
-        });
-    }
-
-    await Conversation.findByIdAndUpdate(req.params.id, {
-      $pull: { members: targetId, admins: targetId },
-    });
-
-    return res
-      .status(200)
-      .json({ success: true, message: "Đã xóa thành viên khỏi nhóm." });
-  } catch (err) {
-    console.error("[removeMember]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    await Conversation.findByIdAndUpdate(group._id, { $pull: { members: req.params.userId, admins: req.params.userId } });
+    return res.json({ success: true, message: "Member removed." });
+  } catch (error) {
+    console.error("[removeMember]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.promoteAdmin = async (req, res) => {
   try {
     const group = await Conversation.findById(req.params.id);
-    if (!group || group.type !== "GROUP") {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy nhóm." });
+    if (!group || !isAdmin(group, req.userId)) return res.status(403).json({ success: false, message: "Group admin access required." });
+    if (!group.members.some((id) => id.toString() === req.body.userId)) {
+      return res.status(400).json({ success: false, message: "The new admin must be a group member." });
     }
-
-    const isAdmin = group.admins.some((a) => a.toString() === req.userId);
-    if (!isAdmin) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Chỉ admin mới được phân quyền." });
-    }
-
-    const { userId } = req.body;
-    await Conversation.findByIdAndUpdate(req.params.id, {
-      $addToSet: { admins: userId },
-    });
-
-    return res
-      .status(200)
-      .json({ success: true, message: "Đã cấp quyền admin." });
-  } catch (err) {
-    console.error("[promoteAdmin]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
-  }
-};
-
-exports.getMyGroups = async (req, res) => {
-  try {
-    const groups = await Conversation.find({
-      type: "GROUP",
-      members: req.userId,
-    })
-      .populate("members", "username avatarUrl isOnline")
-      .populate("lastMessage");
-
-    return res.status(200).json({ success: true, groups });
-  } catch (err) {
-    console.error("[getMyGroups]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    await Conversation.findByIdAndUpdate(group._id, { $addToSet: { admins: req.body.userId } });
+    return res.json({ success: true, message: "Admin promoted." });
+  } catch (error) {
+    console.error("[promoteAdmin]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
