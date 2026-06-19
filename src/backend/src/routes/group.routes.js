@@ -11,5 +11,6 @@ router.patch("/:id", groupCtrl.updateGroup);
 router.post("/:id/members", groupCtrl.addMember);
 router.delete("/:id/members/:userId", groupCtrl.removeMember);
 router.post("/:id/admins", groupCtrl.promoteAdmin);
+router.get("/all", groupCtrl.getMyConversations);
 
 module.exports = router;

@@ -43,6 +43,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Local device identity and public-key publication | Implemented |
 | User search, profile update, block/unblock | Implemented |
 | Direct conversations and group administration | Implemented |
+| Conversation sidebar listing | `GET /chat/conversations`; compatibility `GET /groups/all` |
 | JWT-authenticated realtime encrypted chat | Implemented |
 | Delivered/seen, typing, missed-message recovery | Implemented |
 | Encrypted attachment upload/download | Implemented; requires Cloudinary |

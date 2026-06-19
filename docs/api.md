@@ -63,6 +63,7 @@ Successful register/login response:
 | --- | --- | --- | --- |
 | POST | `/groups` | `{ name, memberIds, mode? }` | Create group; creator becomes admin |
 | GET | `/groups` | None | List current user's groups |
+| GET | `/groups/all` | None | Compatibility conversation list with display metadata |
 | PATCH | `/groups/:id` | `{ name?, avatarUrl? }` | Admin updates group metadata |
 | POST | `/groups/:id/members` | `{ userId }` | Admin adds member |
 | DELETE | `/groups/:id/members/:userId` | None | Admin removes member or member leaves |

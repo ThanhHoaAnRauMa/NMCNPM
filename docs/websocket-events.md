@@ -59,3 +59,7 @@ The handshake JWT determines `socket.userId`. Emitting `user_online` cannot chan
 * KYC mode: ciphertext/signature are stored and available through HTTP history/recovery.
 * Privacy mode: payload is memory-relayed only; offline recovery and AI summary are unavailable.
 * Attachments use authenticated HTTP upload, then the server emits `new_message` to the room.
+
+## REST Companion
+
+Use `GET /chat/conversations` for the canonical member conversation list. `GET /groups/all` remains available as a compatibility endpoint returning display-oriented conversation metadata. Opening a conversation still requires `join_conversation` followed by `GET /chat/:conversationId/messages`.

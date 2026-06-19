@@ -44,6 +44,62 @@ exports.getMyGroups = async (req, res) => {
   }
 };
 
+exports.getMyConversations = async (req, res) => {
+  try {
+    const conversations = await Conversation.find({ members: req.userId })
+      .populate("members", "username displayName avatarUrl isOnline lastSeen kycStatus")
+      .populate({
+        path: "lastMessage",
+        select: "encryptedContent msgType senderId createdAt status fileMime fileName",
+        populate: { path: "senderId", select: "username" },
+      })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    const formatted = conversations.map((conversation) => {
+      const otherUser = conversation.type === "DIRECT" || conversation.type === "direct"
+        ? conversation.members.find((member) => member._id.toString() !== req.userId)
+        : null;
+      const lastMessage = conversation.lastMessage;
+      const preview = lastMessage?.msgType === "FILE"
+        ? `File: ${lastMessage.fileName || "Encrypted attachment"}`
+        : lastMessage
+          ? "[Encrypted Message]"
+          : null;
+
+      return {
+        conversationId: conversation._id,
+        type: conversation.type,
+        mode: conversation.mode,
+        name: otherUser?.displayName || otherUser?.username || conversation.groupName || "Conversation",
+        avatarUrl: otherUser?.avatarUrl || conversation.groupAvatar || null,
+        isOnline: otherUser?.isOnline || false,
+        lastSeen: otherUser?.lastSeen || null,
+        kycStatus: otherUser?.kycStatus || null,
+        otherUserId: otherUser?._id || null,
+        memberCount: conversation.members.length,
+        lastMessage: lastMessage
+          ? {
+              preview,
+              encryptedContent: lastMessage.encryptedContent,
+              senderId: lastMessage.senderId?._id,
+              senderName: lastMessage.senderId?.username,
+              msgType: lastMessage.msgType,
+              status: lastMessage.status,
+              createdAt: lastMessage.createdAt,
+            }
+          : null,
+        updatedAt: conversation.updatedAt,
+      };
+    });
+
+    return res.json({ success: true, conversations: formatted, count: formatted.length });
+  } catch (error) {
+    console.error("[getMyConversations]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
 exports.updateGroup = async (req, res) => {
   try {
     const group = await Conversation.findById(req.params.id);

@@ -66,6 +66,7 @@ describe('integrated feature API', () => {
   test('creates a direct conversation and returns it only to members', async () => {
     const alice = await register('alice', 'alice@example.com')
     const bob = await register('bobby', 'bob@example.com')
+    const carol = await register('carol', 'carol@example.com')
 
     await request(app)
       .post('/users/pubkey')
@@ -84,6 +85,19 @@ describe('integrated feature API', () => {
     assert.equal(conversations.status, 200)
     assert.equal(conversations.body.conversations.length, 1)
     assert.equal(String(conversations.body.conversations[0]._id), String(created.body.conversationId))
+
+    const compatibilityList = await request(app)
+      .get('/groups/all')
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+    assert.equal(compatibilityList.status, 200)
+    assert.equal(compatibilityList.body.conversations.length, 1)
+    assert.equal(String(compatibilityList.body.conversations[0].conversationId), String(created.body.conversationId))
+
+    const outsiderList = await request(app)
+      .get('/groups/all')
+      .set('Authorization', `Bearer ${carol.accessToken}`)
+    assert.equal(outsiderList.status, 200)
+    assert.equal(outsiderList.body.conversations.length, 0)
   })
 
   test('places client-signed KYC proof in pending state', async () => {

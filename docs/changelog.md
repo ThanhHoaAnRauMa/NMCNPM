@@ -20,11 +20,30 @@ Changed:
 
 Fixed:
 
+* Resolved the PR #18/main merge while preserving the authenticated compatibility conversation-list endpoint from PR #17.
 * Removed raw HTML rendering from frontend message-search highlights to prevent stored XSS through indexed snippets.
 * Removed duplicated merge fragments that made feature backend files fail to parse.
 * Prevented Socket.IO identity spoofing through `user_online` and added membership checks.
 * Prevented unauthorized conversation history/file access and unsafe regex user search.
 * Forced feature models to share the root Mongoose connection.
+
+Removed:
+
+* Not Found.
+
+## 2026-06-06
+
+Added:
+
+* Week 3-4 AI usage documentation for Nguyen Ngoc Tuan in `docs/requirements/AI_usage.md`.
+
+Changed:
+
+* Not Found.
+
+Fixed:
+
+* Not Found.
 
 Removed:
 
