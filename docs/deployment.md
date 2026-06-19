@@ -62,6 +62,8 @@ Frontend `frontend/Dockerfile` builds static assets with Node 24 and serves them
 
 ## CI
 
+The backend syntax step checks `src/backend/server.js` and JavaScript under `src/backend/src/`. Installed dependencies are excluded because browser-targeted bundles are not valid standalone Node.js entry points and are already validated by their package publishers.
+
 `.github/workflows/test.yml` runs three jobs:
 
 | Job | Required Checks |

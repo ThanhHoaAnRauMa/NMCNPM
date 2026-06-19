@@ -62,6 +62,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Search and AI need plaintext | Explicit client opt-in; snippets expire after 24h; AI source plaintext is not stored |
 | Feature models must use canonical DB connection | CommonJS models resolve the root Mongoose singleton through `utils/mongoose.js` |
 | Existing database contracts must remain readable | Canonical models accept the existing collection names and preserve existing fields |
+| Backend syntax CI must inspect owned source only | Checks `src/backend/server.js` and `src/backend/src`; dependency bundles are excluded |
 | Frontend production target is not selected | CI builds the image; deployment remains unconfigured |
 
 ## Remaining Work / Blockers

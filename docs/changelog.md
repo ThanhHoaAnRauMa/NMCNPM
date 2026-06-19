@@ -20,6 +20,7 @@ Changed:
 
 Fixed:
 
+* Limited backend CI syntax checks to repository source files so vendored browser bundles in `node_modules` are not parsed as Node.js entry points.
 * Resolved the PR #18/main merge while preserving the authenticated compatibility conversation-list endpoint from PR #17.
 * Removed raw HTML rendering from frontend message-search highlights to prevent stored XSS through indexed snippets.
 * Removed duplicated merge fragments that made feature backend files fail to parse.
