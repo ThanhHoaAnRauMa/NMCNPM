@@ -1,10 +1,42 @@
 # Changelog
 
+## 2026-06-19
+
+Added:
+
+* React/Vite/Tailwind frontend with responsive auth, chat, profile/KYC, search, AI summary, and forensic verification views.
+* IndexedDB device-key storage and browser RSA-OAEP/AES-GCM/ECDSA message and file envelopes.
+* Canonical JWT-authenticated auth/user/chat/group/file/KYC routes and Socket.IO integration.
+* Conversation-list API, feature API integration tests, frontend unit test, frontend Docker image, and frontend CI job.
+
+Changed:
+
+* Consolidated runtime startup under `src/index.js`; `src/backend/server.js` is now a compatibility launcher.
+* Protected search and AI routes with JWT middleware.
+* Changed KYC submissions to `PENDING` instead of trusting clients as automatically verified.
+* Changed attachments to require an encrypted file envelope and encrypted blob.
+* Expanded `Message` with chat status, file, reply, local-delete, timestamp, and idempotency fields.
+* Added frontend service and authentication/file configuration to Docker Compose.
+
+Fixed:
+
+* Limited backend CI syntax checks to repository source files so vendored browser bundles in `node_modules` are not parsed as Node.js entry points.
+* Resolved the PR #18/main merge while preserving the authenticated compatibility conversation-list endpoint from PR #17.
+* Removed raw HTML rendering from frontend message-search highlights to prevent stored XSS through indexed snippets.
+* Removed duplicated merge fragments that made feature backend files fail to parse.
+* Prevented Socket.IO identity spoofing through `user_online` and added membership checks.
+* Prevented unauthorized conversation history/file access and unsafe regex user search.
+* Forced feature models to share the root Mongoose connection.
+
+Removed:
+
+* Not Found.
+
 ## 2026-06-06
 
 Added:
 
-* Week 3-4 AI usage documentation for Nguyễn Ngọc Tuân in `docs/requirements/AI_usage.md`.
+* Week 3-4 AI usage documentation for Nguyen Ngoc Tuan in `docs/requirements/AI_usage.md`.
 
 Changed:
 

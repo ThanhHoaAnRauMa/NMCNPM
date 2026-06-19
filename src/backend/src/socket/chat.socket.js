@@ -1,367 +1,264 @@
-const {
-  onlineUsers,
-  pendingPrivacy,
-  setUserOnline,
-  setUserOffline,
-  queueForOfflineUser,
-  flushOfflineQueue,
-} = require("../utils/socket.utils");
-
-const Message = require("../models/Message.model");
+const jwt = require("jsonwebtoken");
 const Conversation = require("../models/Conversation.model");
+const Message = require("../models/Message.model");
 const User = require("../models/User.model");
 
-module.exports = (io) => {
-  io.on("error", (err) => {
-    console.error("[Socket.io global error]", err.message);
+const onlineUsers = new Map();
+const pendingPrivacy = new Map();
+const MAX_ENCRYPTED_MESSAGE_CHARS = 100000;
+
+function bearerToken(socket) {
+  const authToken = socket.handshake.auth?.token;
+  const header = socket.handshake.headers?.authorization;
+  if (authToken) return authToken;
+  return typeof header === "string" && header.startsWith("Bearer ") ? header.slice(7) : null;
+}
+
+function addOnlineSocket(userId, socketId) {
+  const sockets = onlineUsers.get(userId) || new Set();
+  sockets.add(socketId);
+  onlineUsers.set(userId, sockets);
+}
+
+function removeOnlineSocket(userId, socketId) {
+  const sockets = onlineUsers.get(userId);
+  if (!sockets) return true;
+  sockets.delete(socketId);
+  if (sockets.size) return false;
+  onlineUsers.delete(userId);
+  return true;
+}
+
+module.exports = function registerChatSocket(io) {
+  io.use((socket, next) => {
+    try {
+      const payload = jwt.verify(bearerToken(socket), process.env.JWT_SECRET);
+      socket.userId = payload.userId;
+      next();
+    } catch (_error) {
+      const error = new Error("not authorized");
+      error.data = { code: "SOCKET_UNAUTHORIZED" };
+      next(error);
+    }
   });
 
-  io.on("connection", (socket) => {
-    console.log(`🔌 Socket connected: ${socket.id}`);
+  io.on("connection", async (socket) => {
+    const joinedConversations = new Set();
+    addOnlineSocket(socket.userId, socket.id);
+    await User.findByIdAndUpdate(socket.userId, { isOnline: true }).catch((error) => {
+      console.error("[socket online]", error);
+    });
+    socket.broadcast.emit("user_status", { userId: socket.userId, isOnline: true });
 
     const emitError = (event, code, message, extra = {}) => {
-      socket.emit("socket_error", {
-        event,
-        code,
-        message,
-        ...extra,
-      });
+      socket.emit("socket_error", { event, code, message, ...extra });
     };
 
-    socket.on("user_online", async ({ userId }) => {
-      if (!userId) return;
-      try {
-        setUserOnline(userId, socket.id);
-        socket.userId = userId;
-
-        await User.findByIdAndUpdate(userId, { isOnline: true });
-
-        socket.broadcast.emit("user_status", { userId, isOnline: true });
-
-        const queue = flushOfflineQueue(userId);
-        if (queue.length > 0) {
-          console.log(
-            `📬 Delivering ${queue.length} queued messages to ${userId}`,
-          );
-          queue.forEach((msg) => {
-            socket.emit("new_message", { ...msg, fromQueue: true });
-          });
-        }
-
-        console.log(`👤 User online: ${userId}`);
-      } catch (err) {
-        console.error("❌ [user_online error]", err);
-      }
-    });
-
-    socket.on("join_conversation", ({ conversationId }) => {
+    const joinConversation = async ({ conversationId } = {}, acknowledge) => {
       if (!conversationId) {
-        emitError(
-          "join_conversation",
-          "MISSING_CONVERSATION_ID",
-          "Thiếu conversationId",
-        );
-        return;
+        emitError("join_conversation", "MISSING_CONVERSATION_ID", "conversationId is required.");
+        return acknowledge?.({ success: false });
       }
-      socket.join(conversationId);
-      console.log(`💬 Socket ${socket.id} joined room: ${conversationId}`);
-    });
+      try {
+        const allowed = await Conversation.exists({ _id: conversationId, members: socket.userId });
+        if (!allowed) {
+          emitError("join_conversation", "NOT_A_MEMBER", "Conversation not found or access denied.");
+          return acknowledge?.({ success: false });
+        }
+        await socket.join(conversationId);
+        joinedConversations.add(conversationId);
+        return acknowledge?.({ success: true });
+      } catch (error) {
+        console.error("[join_conversation]", error);
+        emitError("join_conversation", "SERVER_ERROR", "Unable to join conversation.");
+        return acknowledge?.({ success: false });
+      }
+    };
 
-    socket.on("leave_conversation", ({ conversationId }) => {
+    const leaveConversation = ({ conversationId } = {}) => {
+      if (!conversationId) return;
+      joinedConversations.delete(conversationId);
       socket.leave(conversationId);
-    });
+    };
 
-    socket.on("send_message", async (data) => {
-      const {
-        conversationId,
-        encryptedContent,
-        signature,
-        msgType,
-        replyTo,
-        tempId,
-      } = data;
+    socket.on("join", joinConversation);
+    socket.on("join_conversation", joinConversation);
+    socket.on("leave", leaveConversation);
+    socket.on("leave_conversation", leaveConversation);
+    socket.on("user_online", () => socket.emit("user_status", { userId: socket.userId, isOnline: true }));
 
-      if (!conversationId || !encryptedContent || !signature) {
-        emitError(
-          "send_message",
-          "MISSING_REQUIRED_FIELDS",
-          "Thiếu conversationId, encryptedContent hoặc signature",
-          { tempId },
-        );
-        return;
+    socket.on("send_message", async (data = {}) => {
+      const { conversationId, encryptedContent, signature, msgType, replyTo, tempId } = data;
+      if (!conversationId || !encryptedContent || typeof signature !== "string" || !signature) {
+        return emitError("send_message", "MISSING_REQUIRED_FIELDS", "conversationId, encryptedContent and signature are required.", { tempId });
       }
+      if (typeof encryptedContent !== "string" || encryptedContent.length > MAX_ENCRYPTED_MESSAGE_CHARS) {
+        return emitError("send_message", "MESSAGE_TOO_LARGE", "Encrypted message is too large.", { tempId });
+      }
+      if (signature.length > 16384) return emitError("send_message", "SIGNATURE_TOO_LARGE", "Signature is too large.", { tempId });
 
       try {
-        const senderId = socket.userId;
-
-        if (!senderId) {
-          emitError(
-            "send_message",
-            "NOT_AUTHENTICATED",
-            "Bạn chưa đăng nhập. Hãy emit user_online trước.",
-            { tempId },
-          );
-          return;
+        const conversation = await Conversation.findOne({ _id: conversationId, members: socket.userId });
+        if (!conversation) {
+          return emitError("send_message", "NOT_A_MEMBER", "Conversation not found or access denied.", { tempId });
+        }
+        if (conversation.mode === "PRIVACY" || conversation.mode === "Privacy") {
+          return emitError("send_message", "USE_PRIVATE_EVENT", "Use send_private_message for privacy mode.", { tempId });
         }
 
-        const conv = await Conversation.findById(conversationId);
-        if (!conv) {
-          emitError(
-            "send_message",
-            "CONVERSATION_NOT_FOUND",
-            "Conversation không tồn tại.",
-            { tempId },
-          );
-          return;
-        }
-
-        const isMember = conv.members.some((m) => m.toString() === senderId);
-        if (!isMember) {
-          emitError(
-            "send_message",
-            "NOT_A_MEMBER",
-            "Bạn không phải thành viên của conversation này.",
-            { tempId },
-          );
-          return;
-        }
-
-        if (conv.mode === "PRIVACY") {
-          emitError(
-            "send_message",
-            "USE_PRIVATE_EVENT",
-            "Conversation này ở Privacy Mode. Dùng event send_private_message.",
-            { tempId },
-          );
-          return;
-        }
-
-        if (conv.type === "DIRECT") {
-          const receiverId = conv.members
-            .find((m) => m.toString() !== senderId)
-            ?.toString();
-
-          if (receiverId) {
-            const receiver =
-              await User.findById(receiverId).select("blocklist");
-            const isBlocked = receiver?.blocklist?.some(
-              (id) => id.toString() === senderId,
-            );
-
-            if (isBlocked) {
-              emitError(
-                "send_message",
-                "BLOCKED_BY_RECEIVER",
-                "Không thể gửi tin nhắn. Bạn đã bị người nhận chặn.",
-                { tempId },
-              );
-              return;
-            }
+        if (conversation.type === "DIRECT" || conversation.type === "direct") {
+          const receiverId = conversation.members.find((id) => id.toString() !== socket.userId)?.toString();
+          const receiver = receiverId ? await User.findById(receiverId).select("blocklist") : null;
+          if (receiver?.blocklist?.some((id) => id.toString() === socket.userId)) {
+            return emitError("send_message", "BLOCKED_BY_RECEIVER", "The recipient has blocked this sender.", { tempId });
           }
         }
 
         const message = await Message.create({
           conversationId,
-          senderId,
+          senderId: socket.userId,
           encryptedContent,
           signature,
+          clientMessageId: tempId || null,
           msgType: msgType || "TEXT",
           replyTo: replyTo || null,
           status: "SENT",
         });
-
-        await Conversation.findByIdAndUpdate(conversationId, {
-          lastMessage: message._id,
-        });
+        await Conversation.findByIdAndUpdate(conversationId, { lastMessage: message._id });
 
         const messageData = {
           _id: message._id,
           conversationId,
-          senderId,
+          senderId: socket.userId,
           encryptedContent: message.encryptedContent,
           signature: message.signature,
           msgType: message.msgType,
           status: message.status,
           replyTo: message.replyTo,
+          timestamp: message.timestamp,
           createdAt: message.createdAt,
           tempId,
         };
-
         io.to(conversationId).emit("new_message", messageData);
 
-        for (const memberId of conv.members) {
-          const memberIdStr = memberId.toString();
-          if (memberIdStr === senderId) continue;
+        const recipientOnline = conversation.members.some((id) => {
+          const userId = id.toString();
+          return userId !== socket.userId && onlineUsers.has(userId);
+        });
+        if (recipientOnline) {
+          message.status = "DELIVERED";
+          await message.save();
+          io.to(conversationId).emit("message_status", { messageId: message._id, status: "DELIVERED" });
+        }
+      } catch (error) {
+        if (error?.code === 11000) {
+          return emitError("send_message", "DUPLICATE_MESSAGE", "This message was already accepted.", { tempId });
+        }
+        console.error("[send_message]", error);
+        emitError("send_message", "SERVER_ERROR", "Unable to send message.", { tempId });
+      }
+    });
 
-          const receiverSocketId = onlineUsers.get(memberIdStr);
-          if (receiverSocketId) {
-            await Message.findByIdAndUpdate(message._id, {
-              status: "DELIVERED",
-            });
-            io.to(conversationId).emit("message_status", {
-              messageId: message._id,
-              status: "DELIVERED",
-            });
-          } else {
-            queueForOfflineUser(memberIdStr, messageData);
-            console.log(`📭 Queued message for offline user: ${memberIdStr}`);
+    socket.on("send_private_message", async (data = {}) => {
+      const { conversationId, encryptedContent, signature, tempId } = data;
+      if (!conversationId || !encryptedContent || typeof signature !== "string" || !signature || !tempId) {
+        return emitError("send_private_message", "MISSING_REQUIRED_FIELDS", "conversationId, encryptedContent, signature and tempId are required.", { tempId });
+      }
+      if (encryptedContent.length > MAX_ENCRYPTED_MESSAGE_CHARS || signature.length > 16384) {
+        return emitError("send_private_message", "MESSAGE_TOO_LARGE", "Encrypted message or signature is too large.", { tempId });
+      }
+      try {
+        const conversation = await Conversation.findOne({ _id: conversationId, members: socket.userId });
+        if (!conversation || !["PRIVACY", "Privacy"].includes(conversation.mode)) {
+          return emitError("send_private_message", "INVALID_PRIVACY_CONVERSATION", "Privacy conversation not found or access denied.", { tempId });
+        }
+        if (conversation.type === "DIRECT" || conversation.type === "direct") {
+          const receiverId = conversation.members.find((id) => id.toString() !== socket.userId)?.toString();
+          const receiver = receiverId ? await User.findById(receiverId).select("blocklist") : null;
+          if (receiver?.blocklist?.some((id) => id.toString() === socket.userId)) {
+            return emitError("send_private_message", "BLOCKED_BY_RECEIVER", "The recipient has blocked this sender.", { tempId });
           }
         }
-      } catch (err) {
-        console.error("[send_message error]", err);
-        emitError(
-          "send_message",
-          "SERVER_ERROR",
-          "Lỗi server khi gửi tin nhắn.",
-          { tempId },
-        );
+        socket.to(conversationId).emit("new_private_message", {
+          tempId,
+          conversationId,
+          senderId: socket.userId,
+          encryptedContent,
+          signature,
+          createdAt: new Date().toISOString(),
+        });
+        pendingPrivacy.set(tempId, {
+          conversationId,
+          participants: new Set([socket.userId]),
+          timer: setTimeout(() => pendingPrivacy.delete(tempId), 30000),
+        });
+        socket.emit("private_message_sent", { tempId });
+      } catch (error) {
+        console.error("[send_private_message]", error);
+        emitError("send_private_message", "SERVER_ERROR", "Unable to relay privacy message.", { tempId });
       }
     });
 
-    socket.on("send_private_message", async (data) => {
-      const { conversationId, encryptedContent, signature, tempId } = data;
-
-      if (!conversationId || !encryptedContent || !signature) {
-        emitError(
-          "send_private_message",
-          "MISSING_REQUIRED_FIELDS",
-          "Thiếu conversationId, encryptedContent hoặc signature.",
-          { tempId },
-        );
-        return;
-      }
-
-      const senderId = socket.userId;
-
-      socket.to(conversationId).emit("new_private_message", {
-        tempId,
-        conversationId,
-        senderId,
-        encryptedContent,
-        signature,
-        createdAt: new Date().toISOString(),
-      });
-
-      pendingPrivacy.set(tempId, {
-        senderId,
-        conversationId,
-        ackedBy: new Set([senderId]),
-        timer: setTimeout(() => {
-          pendingPrivacy.delete(tempId);
-        }, 30000),
-      });
-
-      socket.emit("private_message_sent", { tempId });
-    });
-
-    socket.on("ack_private_message", ({ tempId }) => {
+    socket.on("ack_private_message", ({ tempId } = {}) => {
       const pending = pendingPrivacy.get(tempId);
-      if (!pending) return;
-
-      pending.ackedBy.add(socket.userId);
-
-      if (pending.ackedBy.size >= 2) {
+      if (!pending || !joinedConversations.has(pending.conversationId)) return;
+      pending.participants.add(socket.userId);
+      if (pending.participants.size >= 2) {
         clearTimeout(pending.timer);
         pendingPrivacy.delete(tempId);
-        console.log(`🔒 Privacy message ${tempId} cleared after double ACK`);
       }
     });
 
-    socket.on("mark_seen", async ({ messageId, conversationId }) => {
-      if (!messageId || !conversationId) {
-        emitError(
-          "mark_seen",
-          "MISSING_FIELDS",
-          "Thiếu messageId hoặc conversationId.",
-        );
-        return;
-      }
+    socket.on("mark_seen", async ({ messageId, conversationId } = {}) => {
       try {
-        await Message.findByIdAndUpdate(messageId, { status: "SEEN" });
-        io.to(conversationId).emit("message_status", {
-          messageId,
-          status: "SEEN",
-          seenBy: socket.userId,
-        });
-      } catch (err) {
-        console.error("[mark_seen error]", err);
-        emitError("mark_seen", "SERVER_ERROR", "Lỗi khi cập nhật trạng thái.");
-      }
-    });
-
-    socket.on("typing", ({ conversationId }) => {
-      socket.to(conversationId).emit("user_typing", {
-        userId: socket.userId,
-        conversationId,
-      });
-    });
-
-    socket.on("stop_typing", ({ conversationId }) => {
-      socket.to(conversationId).emit("user_stop_typing", {
-        userId: socket.userId,
-        conversationId,
-      });
-    });
-
-    socket.on("get_missed_messages", async ({ conversationId, since }) => {
-      if (!conversationId || !since) {
-        emitError(
-          "get_missed_messages",
-          "MISSING_FIELDS",
-          "Thiếu conversationId hoặc since timestamp.",
+        const conversation = await Conversation.exists({ _id: conversationId, members: socket.userId });
+        if (!conversation) return emitError("mark_seen", "NOT_A_MEMBER", "Conversation access denied.");
+        const message = await Message.findOneAndUpdate(
+          { _id: messageId, conversationId },
+          { status: "SEEN" },
+          { returnDocument: "after" },
         );
-        return;
+        if (!message) return emitError("mark_seen", "MESSAGE_NOT_FOUND", "Message not found.");
+        io.to(conversationId).emit("message_status", { messageId, status: "SEEN", seenBy: socket.userId });
+      } catch (error) {
+        console.error("[mark_seen]", error);
+        emitError("mark_seen", "SERVER_ERROR", "Unable to update message status.");
       }
+    });
+
+    socket.on("typing", ({ conversationId } = {}) => {
+      if (joinedConversations.has(conversationId)) socket.to(conversationId).emit("user_typing", { userId: socket.userId, conversationId });
+    });
+    socket.on("stop_typing", ({ conversationId } = {}) => {
+      if (joinedConversations.has(conversationId)) socket.to(conversationId).emit("user_stop_typing", { userId: socket.userId, conversationId });
+    });
+
+    socket.on("get_missed_messages", async ({ conversationId, since } = {}) => {
       try {
-        const missed = await Message.find({
-          conversationId,
-          createdAt: { $gt: new Date(since) },
-        })
+        const sinceDate = new Date(since);
+        const conversation = await Conversation.exists({ _id: conversationId, members: socket.userId });
+        if (!conversation || Number.isNaN(sinceDate.getTime())) {
+          return emitError("get_missed_messages", "INVALID_REQUEST", "Valid conversationId and since are required.");
+        }
+        const messages = await Message.find({ conversationId, createdAt: { $gt: sinceDate } })
           .sort({ createdAt: 1 })
-          .limit(50)
-          .populate("senderId", "username avatarUrl");
-
-        socket.emit("missed_messages", {
-          conversationId,
-          messages: missed,
-          count: missed.length,
-        });
-      } catch (err) {
-        console.error("[get_missed_messages error]", err);
-        emitError(
-          "get_missed_messages",
-          "SERVER_ERROR",
-          "Lỗi khi lấy tin nhắn bị miss.",
-        );
+          .limit(100)
+          .populate("senderId", "username displayName avatarUrl publicKey")
+          .lean();
+        socket.emit("missed_messages", { conversationId, messages, count: messages.length });
+      } catch (error) {
+        console.error("[get_missed_messages]", error);
+        emitError("get_missed_messages", "SERVER_ERROR", "Unable to load missed messages.");
       }
     });
 
     socket.on("disconnect", async (reason) => {
-      console.log(`🔴 Socket disconnected: ${socket.id} — reason: ${reason}`);
-
-      if (!socket.userId) return;
-
-      setUserOffline(socket.userId);
-
-      try {
-        await User.findByIdAndUpdate(socket.userId, {
-          isOnline: false,
-          lastSeen: new Date(),
-        });
-
-        socket.broadcast.emit("user_status", {
-          userId: socket.userId,
-          isOnline: false,
-          lastSeen: new Date().toISOString(),
-          reason,
-        });
-      } catch (err) {
-        console.error("[disconnect handler error]", err);
-      }
-    });
-
-    socket.on("error", (err) => {
-      console.error(`[Socket error] ${socket.id}:`, err.message);
+      if (!removeOnlineSocket(socket.userId, socket.id)) return;
+      const lastSeen = new Date();
+      await User.findByIdAndUpdate(socket.userId, { isOnline: false, lastSeen }).catch((error) => {
+        console.error("[socket disconnect]", error);
+      });
+      socket.broadcast.emit("user_status", { userId: socket.userId, isOnline: false, lastSeen, reason });
     });
   });
 };

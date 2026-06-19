@@ -12,6 +12,15 @@ import { Server as SocketIO } from 'socket.io'
 import aiRouter from './routes/ai.js'
 import { registerHealthRoutes } from './health.js'
 import messagesRouter from './routes/messages.js'
+import authRouter from './backend/src/routes/auth.routes.js'
+import userRouter from './backend/src/routes/user.routes.js'
+import chatRouter from './backend/src/routes/chat.routes.js'
+import groupRouter from './backend/src/routes/group.routes.js'
+import fileRouter from './backend/src/routes/file.routes.js'
+import kycRouter from './backend/src/routes/kyc.routes.js'
+import registerChatSocket from './backend/src/socket/chat.socket.js'
+import authMiddleware from './backend/src/middleware/auth.middleware.js'
+import rateLimitMiddleware from './backend/src/middleware/rateLimit.middleware.js'
 
 // Environment
 const PORT = process.env.PORT || 3000
@@ -34,8 +43,19 @@ if (NODE_ENV === 'development') app.use(morgan('dev'))
 registerHealthRoutes(app, { env: NODE_ENV })
 
 // Mount messages router at /messages
-app.use('/messages', messagesRouter)
-app.use('/ai', aiRouter)
+const { verifyToken } = authMiddleware
+const { createRateLimiter } = rateLimitMiddleware
+const searchLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 60 })
+const aiLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 30 })
+
+app.use('/messages', verifyToken, searchLimiter, messagesRouter)
+app.use('/ai', verifyToken, aiLimiter, aiRouter)
+app.use('/auth', authRouter)
+app.use('/users', userRouter)
+app.use('/chat', chatRouter)
+app.use('/groups', groupRouter)
+app.use('/files', fileRouter)
+app.use('/kyc', kycRouter)
 
 // Generic error handler
 app.use((err, _req, res, _next) => {
@@ -48,23 +68,9 @@ const server = http.createServer(app)
 const io = new SocketIO(server, {
   cors: { origin: CORS_ORIGIN },
 })
+app.set('io', io)
 
-// Basic Socket.IO handlers (join/leave rooms per conversation)
-io.on('connection', (socket) => {
-  console.log('Socket connected', socket.id)
-
-  socket.on('join', ({ conversationId }) => {
-    if (conversationId) socket.join(conversationId)
-  })
-
-  socket.on('leave', ({ conversationId }) => {
-    if (conversationId) socket.leave(conversationId)
-  })
-
-  socket.on('disconnect', () => {
-    console.log('Socket disconnected', socket.id)
-  })
-})
+registerChatSocket(io)
 
 // Start server after successful DB connection
 async function start() {

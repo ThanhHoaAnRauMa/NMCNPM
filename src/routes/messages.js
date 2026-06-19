@@ -49,6 +49,18 @@ function highlight(text, keyword) {
   return safeText.replace(new RegExp(`(${tokens.join('|')})`, 'gi'), '<em>$1</em>')
 }
 
+async function authorizedConversationIds(req, requestedConversationId) {
+  if (!req.userId) return requestedConversationId ? [requestedConversationId] : null
+  const userId = toObjectId(req.userId, 'authenticated user')
+  const filter = { members: userId }
+  if (requestedConversationId) filter._id = requestedConversationId
+  const conversations = await mongoose.connection.collection('conversations')
+    .find(filter)
+    .project({ _id: 1 })
+    .toArray()
+  return conversations.map((conversation) => conversation._id)
+}
+
 /*
  * Search uses opt-in ephemeral snippets because MongoDB cannot text-search E2E ciphertext.
  * The main Message collection remains ciphertext-only.
@@ -67,7 +79,11 @@ router.post('/search', async (req, res) => {
   try {
     const match = { $text: { $search: keyword.trim() } }
 
-    if (conversationId) match.conversationId = toObjectId(conversationId, 'conversationId')
+    const requestedConversationId = conversationId ? toObjectId(conversationId, 'conversationId') : null
+    const allowedConversationIds = await authorizedConversationIds(req, requestedConversationId)
+    if (allowedConversationIds && !allowedConversationIds.length) return res.json({ results: [] })
+    if (allowedConversationIds) match.conversationId = { $in: allowedConversationIds }
+    else if (requestedConversationId) match.conversationId = requestedConversationId
     if (senderId) match.senderId = toObjectId(senderId, 'senderId')
     if (dateFrom || dateTo) {
       match.createdAt = {}
@@ -124,12 +140,26 @@ router.post('/index-snippet', async (req, res) => {
   }
 
   try {
+    const messageObjectId = toObjectId(messageId, 'messageId')
+    const conversationObjectId = toObjectId(conversationId, 'conversationId')
+    const senderObjectId = toObjectId(senderId, 'senderId')
+    if (req.userId) {
+      if (String(req.userId) !== String(senderId)) return res.status(403).json({ error: 'senderId must match authenticated user' })
+      const allowed = await authorizedConversationIds(req, conversationObjectId)
+      if (!allowed.length) return res.status(403).json({ error: 'conversation access denied' })
+      const message = await mongoose.connection.collection('messages').findOne({
+        _id: messageObjectId,
+        conversationId: conversationObjectId,
+        senderId: senderObjectId,
+      }, { projection: { _id: 1 } })
+      if (!message) return res.status(404).json({ error: 'message not found in conversation' })
+    }
     const document = await MessageSearch.findOneAndUpdate(
-      { messageId: toObjectId(messageId, 'messageId') },
+      { messageId: messageObjectId },
       {
         $set: {
-          conversationId: toObjectId(conversationId, 'conversationId'),
-          senderId: toObjectId(senderId, 'senderId'),
+          conversationId: conversationObjectId,
+          senderId: senderObjectId,
           snippet: snippet.trim(),
           createdAt: new Date(),
         },

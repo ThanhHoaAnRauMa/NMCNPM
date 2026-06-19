@@ -7,6 +7,7 @@ router.use(verifyToken);
 
 router.post("/", groupCtrl.createGroup);
 router.get("/", groupCtrl.getMyGroups);
+router.patch("/:id", groupCtrl.updateGroup);
 router.post("/:id/members", groupCtrl.addMember);
 router.delete("/:id/members/:userId", groupCtrl.removeMember);
 router.post("/:id/admins", groupCtrl.promoteAdmin);

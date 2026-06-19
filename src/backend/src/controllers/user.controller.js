@@ -1,268 +1,142 @@
+const mongoose = require("../utils/mongoose");
+const Conversation = require("../models/Conversation.model");
 const User = require("../models/User.model");
+
+function validId(value) {
+  return mongoose.Types.ObjectId.isValid(value);
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 exports.uploadPublicKey = async (req, res) => {
   try {
-    const { publicKey } = req.body;
-
-    if (!publicKey) {
-      return res.status(400).json({
-        success: false,
-        message: "Thiếu publicKey.",
-      });
+    const publicKey = typeof req.body.publicKey === "string" ? req.body.publicKey.trim() : "";
+    if (!publicKey || publicKey.length > 16384) {
+      return res.status(400).json({ success: false, message: "A valid public key is required." });
     }
-
-    await User.findByIdAndUpdate(req.userId, { publicKey });
-
-    return res.status(200).json({
-      success: true,
-      message: "Upload public key thành công.",
-    });
-  } catch (err) {
-    console.error("[uploadPublicKey]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    await User.findByIdAndUpdate(req.userId, { publicKey }, { runValidators: true });
+    return res.json({ success: true, message: "Public key updated." });
+  } catch (error) {
+    console.error("[uploadPublicKey]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.getPublicKey = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select(
-      "publicKey username",
-    );
-
-    if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy user." });
-    }
-    if (!user.publicKey) {
-      return res.status(404).json({
-        success: false,
-        message: "User này chưa upload public key.",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      userId: req.params.id,
-      username: user.username,
-      publicKey: user.publicKey,
-    });
-  } catch (err) {
-    console.error("[getPublicKey]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    if (!validId(req.params.id)) return res.status(400).json({ success: false, message: "Invalid user id." });
+    const user = await User.findById(req.params.id).select("publicKey username displayName").lean();
+    if (!user) return res.status(404).json({ success: false, message: "User not found." });
+    if (!user.publicKey) return res.status(404).json({ success: false, message: "User has no public key." });
+    return res.json({ success: true, userId: user._id, username: user.username, displayName: user.displayName, publicKey: user.publicKey });
+  } catch (error) {
+    console.error("[getPublicKey]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.blockUser = async (req, res) => {
   try {
-    const blockerId = req.userId;
-    const blockedId = req.params.id;
-
-    if (blockerId === blockedId) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Không thể block chính mình." });
+    if (!validId(req.params.id) || req.params.id === req.userId) {
+      return res.status(400).json({ success: false, message: "Invalid user to block." });
     }
-
-    const targetUser = await User.findById(blockedId);
-    if (!targetUser) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy user." });
-    }
-
-    await User.findByIdAndUpdate(blockerId, {
-      $addToSet: { blocklist: blockedId },
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: `Đã block user ${targetUser.username}.`,
-    });
-  } catch (err) {
-    console.error("[blockUser]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    const target = await User.findById(req.params.id).select("username").lean();
+    if (!target) return res.status(404).json({ success: false, message: "User not found." });
+    await User.findByIdAndUpdate(req.userId, { $addToSet: { blocklist: target._id } });
+    return res.json({ success: true, message: `${target.username} was blocked.` });
+  } catch (error) {
+    console.error("[blockUser]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.unblockUser = async (req, res) => {
   try {
-    const blockerId = req.userId;
-    const blockedId = req.params.id;
-
-    await User.findByIdAndUpdate(blockerId, {
-      $pull: { blocklist: blockedId },
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Đã unblock user.",
-    });
-  } catch (err) {
-    console.error("[unblockUser]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    if (!validId(req.params.id)) return res.status(400).json({ success: false, message: "Invalid user id." });
+    await User.findByIdAndUpdate(req.userId, { $pull: { blocklist: req.params.id } });
+    return res.json({ success: true, message: "User was unblocked." });
+  } catch (error) {
+    console.error("[unblockUser]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { displayName, avatarUrl } = req.body;
-    const updateFields = {};
-    if (displayName !== undefined)
-      updateFields.displayName = displayName.trim();
-    if (avatarUrl !== undefined) updateFields.avatarUrl = avatarUrl;
-
-    if (Object.keys(updateFields).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Không có thông tin nào được cập nhật.",
-      });
+    const updates = {};
+    if (typeof req.body.displayName === "string") updates.displayName = req.body.displayName.trim();
+    if (typeof req.body.avatarUrl === "string") updates.avatarUrl = req.body.avatarUrl.trim() || null;
+    if (!Object.keys(updates).length) {
+      return res.status(400).json({ success: false, message: "No supported profile fields supplied." });
     }
-
-    const user = await User.findByIdAndUpdate(req.userId, updateFields, {
-      new: true,
-    }).select("-password -loginAttempts -lockUntil -blocklist");
-
-    return res.status(200).json({
-      success: true,
-      message: "Cập nhật hồ sơ thành công.",
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        displayName: user.displayName,
-        avatarUrl: user.avatarUrl,
-        kycStatus: user.kycStatus,
-        isOnline: user.isOnline,
-        lastSeen: user.lastSeen,
-      },
-    });
-  } catch (err) {
-    console.error("[updateProfile]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    const user = await User.findByIdAndUpdate(req.userId, updates, { returnDocument: "after", runValidators: true })
+      .select("-password -loginAttempts -lockUntil -blocklist")
+      .lean();
+    return res.json({ success: true, message: "Profile updated.", user: { ...user, id: user._id } });
+  } catch (error) {
+    console.error("[updateProfile]", error);
+    return res.status(error.name === "ValidationError" ? 400 : 500).json({ success: false, message: error.name === "ValidationError" ? "Invalid profile data." : "Internal server error." });
   }
 };
 
 exports.getMyProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.userId).select(
-      "-password -loginAttempts -lockUntil -blocklist",
-    );
-
-    if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy user." });
-    }
-
-    return res.status(200).json({
-      success: true,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        displayName: user.displayName,
-        avatarUrl: user.avatarUrl,
-        kycStatus: user.kycStatus,
-        publicKey: user.publicKey,
-        isOnline: user.isOnline,
-        lastSeen: user.lastSeen,
-        createdAt: user.createdAt,
-      },
-    });
-  } catch (err) {
-    console.error("[getMyProfile]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    const user = await User.findById(req.userId).select("-password -loginAttempts -lockUntil -blocklist").lean();
+    if (!user) return res.status(404).json({ success: false, message: "User not found." });
+    return res.json({ success: true, user: { ...user, id: user._id } });
+  } catch (error) {
+    console.error("[getMyProfile]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.searchUsers = async (req, res) => {
   try {
-    const { q } = req.query;
-
-    if (!q || q.trim().length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: "Từ khóa tìm kiếm phải có ít nhất 2 ký tự.",
-      });
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (query.length < 2 || query.length > 80) {
+      return res.status(400).json({ success: false, message: "Search query must contain 2 to 80 characters." });
     }
-
-    const keyword = q.trim();
-
+    const regex = new RegExp(escapeRegex(query), "i");
     const users = await User.find({
       _id: { $ne: req.userId },
-      $or: [
-        { username: { $regex: keyword, $options: "i" } },
-        { email: { $regex: keyword, $options: "i" } },
-      ],
+      $or: [{ username: regex }, { email: regex }, { displayName: regex }],
     })
-      .select(
-        "username email displayName avatarUrl kycStatus isOnline lastSeen",
-      )
-      .limit(10);
-
-    return res.status(200).json({
-      success: true,
-      users,
-      count: users.length,
-    });
-  } catch (err) {
-    console.error("[searchUsers]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+      .select("username displayName avatarUrl kycStatus isOnline lastSeen")
+      .limit(10)
+      .lean();
+    return res.json({ success: true, users, count: users.length });
+  } catch (error) {
+    console.error("[searchUsers]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.startDirectConversation = async (req, res) => {
   try {
-    const Conversation = require("../models/Conversation.model");
-
-    const myId = req.userId;
     const otherId = req.params.id;
-
-    if (myId === otherId) {
-      return res.status(400).json({
-        success: false,
-        message: "Không thể tự nhắn tin cho chính mình.",
-      });
+    if (!validId(otherId) || otherId === req.userId) {
+      return res.status(400).json({ success: false, message: "Invalid conversation participant." });
+    }
+    const otherUser = await User.findById(otherId).select("username displayName avatarUrl kycStatus publicKey blocklist");
+    if (!otherUser) return res.status(404).json({ success: false, message: "User not found." });
+    if (otherUser.blocklist.some((id) => id.toString() === req.userId)) {
+      return res.status(403).json({ success: false, message: "This user cannot be contacted." });
     }
 
-    const otherUser = await User.findById(otherId).select(
-      "username avatarUrl kycStatus",
-    );
-    if (!otherUser) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy user." });
+    let conversation = await Conversation.findOne({ type: { $in: ["DIRECT", "direct"] }, members: { $all: [req.userId, otherId], $size: 2 } });
+    let isNew = false;
+    if (!conversation) {
+      const mode = req.body.mode === "PRIVACY" ? "PRIVACY" : "KYC";
+      conversation = await Conversation.create({ type: "DIRECT", mode, members: [req.userId, otherId] });
+      isNew = true;
     }
-
-    const existing = await Conversation.findOne({
-      type: "DIRECT",
-      members: { $all: [myId, otherId], $size: 2 },
-    });
-
-    if (existing) {
-      return res.status(200).json({
-        success: true,
-        conversationId: existing._id,
-        isNew: false,
-        otherUser,
-      });
-    }
-
-    const conversation = await Conversation.create({
-      type: "DIRECT",
-      mode: "KYC",
-      members: [myId, otherId],
-    });
-
-    return res.status(201).json({
-      success: true,
-      conversationId: conversation._id,
-      isNew: true,
-      otherUser,
-    });
-  } catch (err) {
-    console.error("[startDirectConversation]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    const publicOtherUser = otherUser.toObject();
+    delete publicOtherUser.blocklist;
+    return res.status(isNew ? 201 : 200).json({ success: true, conversationId: conversation._id, conversation, isNew, otherUser: publicOtherUser });
+  } catch (error) {
+    console.error("[startDirectConversation]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };

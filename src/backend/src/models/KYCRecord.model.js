@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require("../utils/mongoose");
 
 const KYCRecordSchema = new mongoose.Schema(
   {
@@ -37,4 +37,5 @@ const KYCRecordSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-module.exports = mongoose.model("KYCRecord", KYCRecordSchema);
+module.exports =
+  mongoose.models.KYCRecord || mongoose.model("KYCRecord", KYCRecordSchema);

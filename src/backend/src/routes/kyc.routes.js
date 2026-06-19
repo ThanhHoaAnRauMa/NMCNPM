@@ -7,6 +7,6 @@ router.post("/submit", verifyToken, kycCtrl.submitKYC);
 
 router.get("/status", verifyToken, kycCtrl.getKYCStatus);
 
-router.get("/status/:userId", kycCtrl.getUserKYCStatus);
+router.get("/status/:userId", verifyToken, kycCtrl.getUserKYCStatus);
 
 module.exports = router;

@@ -1,118 +1,81 @@
 # Architecture
 
-## Current Repository Layout
+## Components
 
-| Path | Purpose | Status |
-| --- | --- | --- |
-| `src/index.js` | Express, HTTP server, Socket.IO setup, MongoDB connection | Implemented |
-| `src/routes/messages.js` | Message search and snippet indexing routes | Implemented |
-| `src/routes/ai.js` | Gemini-backed summary and moderation routes | Implemented |
-| `src/services/` | Gemini client, AI prompts, moderation helper | Implemented |
-| `src/db/models/` | Mongoose models | Implemented |
-| `src/db/queries/messages.js` | Cursor-based message query helper | Implemented |
-| `src/crypto/` | Standalone crypto utilities and demo | Implemented, not wired into backend routes |
-| `src/ForensisChat.sol` | Solidity forensic room/root contract | Implemented |
-| `script/DeployForensisChat.s.sol` | Foundry deployment script | Implemented |
-| `test/backend/` | Node.js backend tests | Implemented |
-| `test/ForensisChat.t.sol` | Foundry contract tests | Implemented |
-| Frontend app | React/Vite frontend | Not Found |
-| AI service routes | Gemini integration | Not Found |
+| Component | Responsibility |
+| --- | --- |
+| `frontend/` | React UI, JWT session, IndexedDB key storage, Web Crypto, Socket.IO client, ethers proof verification |
+| `src/index.js` | Canonical Express/HTTP/Socket.IO process and MongoDB connection |
+| `src/backend/src/` | CommonJS auth, user, conversation, group, file, KYC, and realtime feature modules |
+| `src/routes/` | ESM message-search and Gemini AI routes |
+| `src/db/` | Canonical database/search/AI models and query helpers |
+| `src/crypto/` | Standalone Node crypto library; not bundled into the browser app |
+| `src/ForensisChat.sol` | UUPS forensic room and Merkle-root contract |
 
-## Runtime Architecture
+## Runtime
 
 ```mermaid
 flowchart TD
-  API[HTTP Client] --> Express[Express App]
-  SocketClient[Socket.IO Client] --> SocketServer[Socket.IO Server]
-  Express --> Health[GET /healthz]
-  Express --> MessagesRouter[/messages router]
-  Express --> AIRouter[/ai router]
-  MessagesRouter --> MessageSearch[(MessageSearch)]
-  AIRouter --> AISummaryCache[(AISummaryCache)]
-  AIRouter --> Gemini[Gemini API]
-  Express --> Mongoose[Mongoose]
-  Mongoose --> MongoDB[(MongoDB)]
-
-  Foundry[Foundry CLI] --> Contract[ForensisChat.sol]
-  DeployScript[DeployForensisChat.s.sol] --> Contract
+  UI[React UI] --> Session[JWT session]
+  UI --> Crypto[Web Crypto API]
+  Crypto --> IDB[(IndexedDB private keys)]
+  Session --> REST[Express routes]
+  Session --> WS[Socket.IO]
+  REST --> Models[Mongoose models]
+  WS --> Models
+  Models --> Mongo[(MongoDB)]
+  REST --> Gemini[Gemini REST API]
+  REST --> Cloudinary[Cloudinary encrypted blobs]
+  UI --> Ethers[ethers.js]
+  Ethers --> Contract[ForensisChat on Sepolia]
 ```
 
-## Backend Flow
+`src/index.js` is the only production entry point. `src/backend/server.js` is a compatibility launcher that dynamically imports it. Feature models use `src/backend/src/utils/mongoose.js` so nested dependencies cannot create a second disconnected Mongoose singleton.
 
-1. `src/index.js` loads `.env`.
-2. Express middleware is registered:
-   - `helmet`
-   - JSON parser with `10kb` limit
-   - URL-encoded parser
-   - CORS with `CORS_ORIGIN`
-   - `morgan` in development
-3. `GET /healthz` is registered.
-4. `/messages` router is mounted.
-5. `/ai` router is mounted.
-6. Socket.IO is attached to the HTTP server.
-7. Mongoose connects to `MONGO_URI`.
-8. HTTP server starts after MongoDB connection succeeds.
+## Message Security Flow
 
-## Socket.IO
+1. Each browser device creates an RSA-OAEP key pair and an ECDSA P-256 key pair.
+2. Private JWKs are stored in IndexedDB; the public bundle is stored on `User.publicKey`.
+3. Before sending text, the client explicitly calls AI moderation with plaintext.
+4. The client creates a random AES-256-GCM key, encrypts content, and RSA-wraps that AES key for every member.
+5. The client signs the serialized encrypted envelope and emits it through authenticated Socket.IO.
+6. KYC-mode ciphertext is stored in MongoDB. Privacy-mode ciphertext is relayed only.
+7. Recipients unwrap/decrypt locally and verify the sender signature against the published key.
 
-| Event | Payload | Behavior |
+Changing a public key does not re-encrypt history. Multi-device key transfer is not implemented.
+
+## HTTP Boundaries
+
+| Prefix | Module | Authentication |
 | --- | --- | --- |
-| `join` | `{ conversationId }` | Socket joins room named by `conversationId` |
-| `leave` | `{ conversationId }` | Socket leaves room named by `conversationId` |
-| `disconnect` | None | Logs disconnect |
+| `/health`, `/healthz` | Root health | Public |
+| `/auth` | Auth routes | Register/login/refresh public; logout JWT |
+| `/users`, `/chat`, `/groups`, `/files`, `/kyc` | Feature routes | JWT |
+| `/messages` | Temporary search snippets | JWT |
+| `/ai` | Gemini moderation/summary | JWT |
 
-Message send/receive events are Not Implemented.
+## Realtime Boundaries
 
-## Blockchain Architecture
+Socket authentication occurs during the handshake with `auth.token`. Room join, send, seen, typing, and missed-message operations verify conversation membership. `user_online` no longer controls identity and cannot impersonate another user.
 
-`ForensisChat.sol` manages on-chain forensic room state:
+## Data Ownership
 
-| Capability | Contract Function |
+| Data | Owner / Storage |
 | --- | --- |
-| Initialize upgradeable owner | `initialize` |
-| Pause/unpause contract | `pause`, `unpause` |
-| Create room | `createRoom` |
-| Manage participants | `addParticipant`, `removeParticipant` |
-| Transfer room master | `transferRoomOwnership` |
-| Propose/veto/execute config | `proposeConfig`, `vetoConfig`, `executeConfig` |
-| Propose/dispute/confirm Merkle root | `proposeRoot`, `disputeRoot`, `confirmRoot` |
-| Verify Merkle proof | `verifyProof` |
+| Password hash, account metadata | MongoDB |
+| Public encryption/signing keys | MongoDB |
+| Private encryption/signing keys | Browser IndexedDB |
+| KYC-mode message ciphertext/signature | MongoDB |
+| Privacy-mode ciphertext | In transit only |
+| Search plaintext snippet | MongoDB TTL collection, opt-in, 24h |
+| AI source plaintext | Request memory only |
+| AI summary | MongoDB TTL cache, 1h |
+| Encrypted attachment blob | Cloudinary |
+| Merkle confirmed roots | Solidity contract |
 
-Backend integration with this contract is Not Implemented.
+## Known Architecture Gaps
 
-## Crypto Module
-
-The `src/crypto/` module exposes:
-
-| Capability | Files |
-| --- | --- |
-| RSA-OAEP key generation and encryption | `asymmetric/` |
-| AES-GCM encryption | `symmetric/` |
-| SHA and HMAC hashing | `hash/` |
-| OTP/TOTP/HOTP helpers | `otp/` |
-| Facade exports | `CryptoService.js`, `index.js` |
-
-This module is not imported by the current Express routes.
-
-## AI Integration
-
-| Capability | Status | Notes |
-| --- | --- | --- |
-| Conversation summary | Implemented | `POST /ai/summarize`; requires client-supplied decrypted plaintext |
-| Summary cache | Implemented | MongoDB TTL cache in `AISummaryCache`, 1 hour |
-| Content moderation | Implemented | `POST /ai/moderate` and middleware factory in `src/services/aiModeration.js` |
-| Moderation fallback | Implemented | Allows message with `is_moderated: false` when Gemini is unavailable or times out |
-
-The backend does not decrypt messages. AI routes are an explicit plaintext disclosure path and must not persist source plaintext.
-
-## Non-Implemented Architecture Areas
-
-| Area | Expected by project docs | Current Source Status |
-| --- | --- | --- |
-| Auth Service | `/auth/register`, `/auth/login`, JWT | Not Implemented |
-| Chat Service | real-time encrypted messaging | Only room join/leave implemented |
-| File upload | Multer/Cloudinary | Not Found |
-| KYC API | `/kyc/submit` | Not Implemented |
-| AI forensic analysis | Evidence analysis beyond summary/moderation | Not Implemented |
-| Blockchain REST layer | `/merkle/*`, `/forensics/*` | Not Implemented |
-| Frontend | React/Vite UI | Not Found |
+* Root and feature directories still contain parallel schema declarations; the canonical runtime sharing rule is documented in `docs/database.md`.
+* There is no worker connecting MongoDB message logs to periodic on-chain Merkle commits.
+* There is no evidence export/proof-generation service.
+* Refresh tokens are returned to JavaScript because cookie-based session rotation is not implemented.

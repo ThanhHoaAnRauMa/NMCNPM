@@ -1,89 +1,59 @@
-const User = require("../models/User.model");
 const KYCRecord = require("../models/KYCRecord.model");
+const User = require("../models/User.model");
 
 exports.submitKYC = async (req, res) => {
   try {
     const { hash, signature, pubkey } = req.body;
-
-    if (!hash || !signature || !pubkey) {
-      return res.status(400).json({
-        success: false,
-        message: "Thiếu thông tin. Cần có hash, signature và pubkey.",
-      });
+    if (!/^[a-f0-9]{64}$/i.test(hash || "") || typeof signature !== "string" || !signature || typeof pubkey !== "string" || !pubkey) {
+      return res.status(400).json({ success: false, message: "A SHA-256 hash, signature and public key are required." });
+    }
+    if (signature.length > 16384 || pubkey.length > 16384) {
+      return res.status(400).json({ success: false, message: "KYC proof is too large." });
     }
 
-    const existingKYC = await KYCRecord.findOne({ userId: req.userId });
-    if (existingKYC) {
-      return res.status(409).json({
-        success: false,
-        message: "Tài khoản này đã được xác minh KYC rồi.",
-        status: existingKYC.status,
-      });
+    const existing = await KYCRecord.findOne({ userId: req.userId }).lean();
+    if (existing) {
+      return res.status(409).json({ success: false, message: "A KYC submission already exists.", status: existing.status });
     }
 
-    const kycRecord = await KYCRecord.create({
+    const record = await KYCRecord.create({
       userId: req.userId,
-      docHash: hash,
+      docHash: hash.toLowerCase(),
       signature,
       pubkey,
-      status: "VERIFIED",
-      verifiedAt: new Date(),
+      status: "PENDING",
     });
-
-    await User.findByIdAndUpdate(req.userId, {
-      kycStatus: "VERIFIED",
-    });
-
+    await User.findByIdAndUpdate(req.userId, { kycStatus: "PENDING" });
     return res.status(201).json({
       success: true,
-      message: "Xác minh KYC thành công!",
-      kycRecord: {
-        id: kycRecord._id,
-        status: kycRecord.status,
-        verifiedAt: kycRecord.verifiedAt,
-      },
+      message: "KYC proof submitted for review.",
+      kycRecord: { id: record._id, status: record.status, verifiedAt: record.verifiedAt },
     });
-  } catch (err) {
-    console.error("[submitKYC]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ success: false, message: "A KYC submission already exists." });
+    console.error("[submitKYC]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.getKYCStatus = async (req, res) => {
   try {
-    const user = await User.findById(req.userId).select("kycStatus username");
-
-    return res.status(200).json({
-      success: true,
-      userId: req.userId,
-      username: user.username,
-      kycStatus: user.kycStatus,
-    });
-  } catch (err) {
-    console.error("[getKYCStatus]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    const user = await User.findById(req.userId).select("kycStatus username").lean();
+    if (!user) return res.status(404).json({ success: false, message: "User not found." });
+    return res.json({ success: true, userId: user._id, username: user.username, kycStatus: user.kycStatus });
+  } catch (error) {
+    console.error("[getKYCStatus]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.getUserKYCStatus = async (req, res) => {
   try {
-    const user = await User.findById(req.params.userId).select(
-      "kycStatus username",
-    );
-    if (!user) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy user." });
-    }
-
-    return res.status(200).json({
-      success: true,
-      userId: req.params.userId,
-      username: user.username,
-      kycStatus: user.kycStatus,
-    });
-  } catch (err) {
-    console.error("[getUserKYCStatus]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    const user = await User.findById(req.params.userId).select("kycStatus username").lean();
+    if (!user) return res.status(404).json({ success: false, message: "User not found." });
+    return res.json({ success: true, userId: user._id, username: user.username, kycStatus: user.kycStatus });
+  } catch (error) {
+    console.error("[getUserKYCStatus]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };

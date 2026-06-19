@@ -1,168 +1,141 @@
-const Message = require("../models/Message.model");
+const path = require("path");
 const Conversation = require("../models/Conversation.model");
+const Message = require("../models/Message.model");
 const { uploadToCloudinary } = require("../utils/cloudinary.utils");
+
+async function memberConversation(conversationId, userId) {
+  return Conversation.findOne({ _id: conversationId, members: userId });
+}
+
+function safeName(value) {
+  return path.basename(typeof value === "string" ? value : "encrypted-file").slice(0, 255);
+}
 
 exports.uploadFile = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: "Không có file nào được gửi lên.",
-      });
-    }
-
+    if (!req.file) return res.status(400).json({ success: false, message: "Encrypted file blob is required." });
     const { conversationId, encryptedContent, signature } = req.body;
-
-    if (!conversationId) {
-      return res.status(400).json({
-        success: false,
-        message: "Thiếu conversationId.",
-      });
+    if (!conversationId || typeof encryptedContent !== "string" || !encryptedContent || typeof signature !== "string" || !signature) {
+      return res.status(400).json({ success: false, message: "conversationId, encryptedContent and signature are required." });
+    }
+    if (encryptedContent.length > 100000 || signature.length > 16384) {
+      return res.status(413).json({ success: false, message: "Encrypted file envelope is too large." });
     }
 
-    const conv = await Conversation.findById(conversationId);
-    if (!conv) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Không tìm thấy conversation." });
+    let envelope;
+    try {
+      envelope = JSON.parse(encryptedContent);
+    } catch (_error) {
+      return res.status(400).json({ success: false, message: "Invalid encrypted file envelope." });
+    }
+    if (envelope?.v !== 1 || envelope?.kind !== "file" || !envelope?.iv || !envelope?.keys) {
+      return res.status(400).json({ success: false, message: "Invalid encrypted file envelope." });
     }
 
-    const isMember = conv.members.some((m) => m.toString() === req.userId);
-    if (!isMember) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Bạn không phải thành viên." });
+    const conversation = await memberConversation(conversationId, req.userId);
+    if (!conversation) return res.status(404).json({ success: false, message: "Conversation not found or access denied." });
+    if (conversation.members.some((memberId) => !envelope.keys[memberId.toString()])) {
+      return res.status(400).json({ success: false, message: "Encrypted file must include a wrapped key for every member." });
     }
 
-    const uploaded = await uploadToCloudinary(
-      req.file.buffer,
-      req.file.mimetype,
-      "securechat/messages",
-    );
-
+    const uploaded = await uploadToCloudinary(req.file.buffer, "application/octet-stream", "securechat/messages");
+    const originalName = safeName(req.body.originalName);
+    const originalMime = typeof req.body.originalMime === "string" ? req.body.originalMime.slice(0, 127) : "application/octet-stream";
     const message = await Message.create({
       conversationId,
       senderId: req.userId,
-      encryptedContent: encryptedContent || "[FILE_ATTACHMENT]",
-      signature: signature || "none",
+      encryptedContent,
+      signature,
+      clientMessageId: req.body.tempId || null,
       msgType: "FILE",
       status: "SENT",
       fileUrl: uploaded.url,
-      fileName: req.file.originalname,
-      fileMime: req.file.mimetype,
-      fileSizeBytes: uploaded.bytes,
+      fileName: originalName,
+      fileMime: originalMime,
+      fileSizeBytes: req.file.size,
       filePublicId: uploaded.publicId,
     });
-
-    await Conversation.findByIdAndUpdate(conversationId, {
-      lastMessage: message._id,
+    await Conversation.findByIdAndUpdate(conversationId, { lastMessage: message._id });
+    req.app.get("io")?.to(conversationId).emit("new_message", {
+      _id: message._id,
+      conversationId,
+      senderId: req.userId,
+      encryptedContent,
+      signature,
+      msgType: "FILE",
+      status: message.status,
+      fileUrl: message.fileUrl,
+      fileName: message.fileName,
+      fileMime: message.fileMime,
+      fileSizeBytes: message.fileSizeBytes,
+      timestamp: message.timestamp,
+      createdAt: message.createdAt,
     });
-
     return res.status(201).json({
       success: true,
       message: {
         _id: message._id,
         conversationId,
         senderId: req.userId,
+        encryptedContent,
+        signature,
         msgType: "FILE",
-        status: "SENT",
-        fileUrl: uploaded.url,
-        fileName: req.file.originalname,
-        fileMime: req.file.mimetype,
-        fileSizeBytes: uploaded.bytes,
+        status: message.status,
+        fileUrl: message.fileUrl,
+        fileName: message.fileName,
+        fileMime: message.fileMime,
+        fileSizeBytes: message.fileSizeBytes,
+        timestamp: message.timestamp,
         createdAt: message.createdAt,
       },
     });
-  } catch (err) {
-    if (err.code === "LIMIT_FILE_SIZE") {
-      return res.status(413).json({
-        success: false,
-        message: `File quá lớn. Tối đa ${process.env.MAX_FILE_SIZE_MB || 10}MB.`,
-      });
+  } catch (error) {
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ success: false, message: `File exceeds ${process.env.MAX_FILE_SIZE_MB || 10} MB.` });
     }
-    if (err.message && err.message.includes("không được hỗ trợ")) {
-      return res.status(400).json({ success: false, message: err.message });
-    }
-    console.error("[uploadFile]", err);
-    return res
-      .status(500)
-      .json({ success: false, message: "Lỗi server khi upload file." });
+    if (error.message?.includes("not supported")) return res.status(400).json({ success: false, message: error.message });
+    console.error("[uploadFile]", error);
+    return res.status(500).json({ success: false, message: "Unable to upload encrypted file." });
   }
 };
 
 exports.getFilesByConversation = async (req, res) => {
   try {
-    const { conversationId } = req.params;
-    const { type = "all", limit = 20, before } = req.query;
+    const conversation = await memberConversation(req.params.conversationId, req.userId);
+    if (!conversation) return res.status(404).json({ success: false, message: "Conversation not found or access denied." });
 
-    let mimeFilter = {};
-    if (type === "image") {
-      mimeFilter = {
-        fileMime: { $regex: /^(image|video)\// },
-      };
-    } else if (type === "file") {
-      mimeFilter = {
-        fileMime: { $not: /^(image|video)\// },
-      };
-    }
-
-    const query = {
-      conversationId,
-      msgType: "FILE",
-      ...mimeFilter,
-    };
-
-    if (before) {
-      query._id = { $lt: before };
-    }
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 20;
+    const query = { conversationId: conversation._id, msgType: "FILE" };
+    if (req.query.type === "image") query.fileMime = { $regex: /^(image|video)\// };
+    if (req.query.type === "file") query.fileMime = { $not: /^(image|video)\// };
+    if (req.query.before) query._id = { $lt: req.query.before };
 
     const files = await Message.find(query)
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit))
-      .populate("senderId", "username avatarUrl")
-      .select("_id fileUrl fileName fileMime fileSizeBytes senderId createdAt");
-
-    const nextCursor =
-      files.length === parseInt(limit) ? files[files.length - 1]._id : null;
-
-    return res.status(200).json({
-      success: true,
-      files: files.reverse(),
-      nextCursor,
-    });
-  } catch (err) {
-    console.error("[getFilesByConversation]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+      .sort({ _id: -1 })
+      .limit(limit)
+      .populate("senderId", "username displayName avatarUrl publicKey")
+      .select("encryptedContent signature fileUrl fileName fileMime fileSizeBytes senderId timestamp createdAt")
+      .lean();
+    const nextCursor = files.length === limit ? files[files.length - 1]._id : null;
+    return res.json({ success: true, files: files.reverse(), nextCursor });
+  } catch (error) {
+    console.error("[getFilesByConversation]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
 
 exports.jumpToMessage = async (req, res) => {
   try {
-    const { conversationId, messageId } = req.params;
-
-    const message = await Message.findOne({
-      _id: messageId,
-      conversationId,
-      msgType: "FILE",
-    }).select("_id createdAt senderId fileName fileMime");
-
-    if (!message) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy tin nhắn chứa file này.",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      messageId: message._id,
-      createdAt: message.createdAt,
-      senderId: message.senderId,
-      fileName: message.fileName,
-      fileMime: message.fileMime,
-    });
-  } catch (err) {
-    console.error("[jumpToMessage]", err);
-    return res.status(500).json({ success: false, message: "Lỗi server." });
+    const conversation = await memberConversation(req.params.conversationId, req.userId);
+    if (!conversation) return res.status(404).json({ success: false, message: "Conversation not found or access denied." });
+    const message = await Message.findOne({ _id: req.params.messageId, conversationId: conversation._id, msgType: "FILE" })
+      .select("_id timestamp createdAt senderId fileName fileMime")
+      .lean();
+    if (!message) return res.status(404).json({ success: false, message: "File message not found." });
+    return res.json({ success: true, ...message, messageId: message._id });
+  } catch (error) {
+    console.error("[jumpToMessage]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };
