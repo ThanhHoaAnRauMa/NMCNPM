@@ -21,6 +21,7 @@ Fixed:
 * Replaced the permanently pending KYC state with a least-privilege manual decision path.
 * Added a recovery path for locally stored device keys without introducing backend private-key custody.
 * Ensured evidence export includes persisted records previously hidden only from the sender's normal chat view.
+* Updated root and nested backend lockfiles to patched `multer`, `engine.io`, `socket.io-adapter`, and `ws` releases, clearing production audit findings.
 
 Removed:
 
