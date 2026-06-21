@@ -8,16 +8,19 @@ Added:
 * Password-encrypted device-key backup and same-account restore using PBKDF2-SHA-256 and AES-256-GCM.
 * Browser-owned evidence package generation, Merkle proofs, signature checks, and wallet-driven contract room/root actions.
 * Backend integration and frontend unit tests for the new security and forensic flows.
+* Committed frontend dependency lockfile.
 
 Changed:
 
 * Aligned the canonical and feature KYC schemas on field names, uppercase statuses, queue index, and audit fields.
 * Updated architecture, API, database, deployment, decisions, and project context documentation.
+* Switched frontend CI and container builds to reproducible `npm ci` installs and enabled lockfile-aware CI caching.
 
 Fixed:
 
 * Replaced the permanently pending KYC state with a least-privilege manual decision path.
 * Added a recovery path for locally stored device keys without introducing backend private-key custody.
+* Ensured evidence export includes persisted records previously hidden only from the sender's normal chat view.
 
 Removed:
 
