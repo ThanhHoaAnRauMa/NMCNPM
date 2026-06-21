@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createKycProof } from '../lib/crypto.js'
+import { createIdentityBackup, restoreIdentityBackup } from '../lib/keyBackup.js'
 
-export default function ProfilePanel({ api, identity, onCreateIdentity, onProfileChanged }) {
+export default function ProfilePanel({ api, identity, onCreateIdentity, onProfileChanged, onRestoreIdentity, userId }) {
   const [profile, setProfile] = useState(null)
   const [form, setForm] = useState({ displayName: '', avatarUrl: '' })
   const [statement, setStatement] = useState('')
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [backupPassword, setBackupPassword] = useState('')
+  const backupInput = useRef(null)
 
   useEffect(() => {
     api.get('/users/me').then(({ user }) => {
@@ -43,6 +46,37 @@ export default function ProfilePanel({ api, identity, onCreateIdentity, onProfil
     }
   }
 
+  const exportBackup = async () => {
+    setError('')
+    try {
+      if (!identity) throw new Error('No device identity is available to back up.')
+      const contents = await createIdentityBackup(userId, identity, backupPassword)
+      const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }))
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `secure-chat-key-${userId}.json`
+      anchor.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setNotice('Encrypted key backup created. Store the file and password separately.')
+    } catch (backupError) {
+      setError(backupError.message)
+    }
+  }
+
+  const importBackup = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setError('')
+    try {
+      const restored = await restoreIdentityBackup(await file.text(), backupPassword, userId)
+      await onRestoreIdentity(restored)
+      setNotice('Device identity restored and public key synchronized.')
+    } catch (backupError) {
+      setError(backupError.message)
+    }
+  }
+
   return (
     <div className="scrollbar h-full overflow-y-auto p-5 sm:p-8">
       <div className="mx-auto max-w-4xl">
@@ -74,6 +108,18 @@ export default function ProfilePanel({ api, identity, onCreateIdentity, onProfil
             </div>
             {!identity && <button className="btn-secondary mt-5 w-full" onClick={onCreateIdentity}>Tạo khóa cho thiết bị này</button>}
             <div className="mt-5 border-t border-line pt-5 text-xs leading-5 text-slate-500">Private key được lưu trong IndexedDB của trình duyệt và không xuất hiện trong request API.</div>
+          </section>
+
+          <section className="panel rounded-2xl p-6 lg:col-span-2">
+            <p className="eyebrow">Encrypted recovery</p>
+            <h3 className="mt-2 text-xl font-bold">Device-key backup</h3>
+            <p className="mt-3 text-xs leading-5 text-slate-400">The private identity is encrypted locally with PBKDF2 and AES-GCM. The backup and password are never sent to the API.</p>
+            <label className="mt-5 block text-xs font-semibold text-slate-300">Backup password<input className="field mt-2" minLength={12} placeholder="At least 12 characters" type="password" value={backupPassword} onChange={(event) => setBackupPassword(event.target.value)} /></label>
+            <input ref={backupInput} className="hidden" accept="application/json,.json" type="file" onChange={importBackup} />
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <button className="btn-secondary" disabled={!identity || backupPassword.length < 12} onClick={exportBackup} type="button">Export encrypted backup</button>
+              <button className="btn-secondary" disabled={backupPassword.length < 12} onClick={() => backupInput.current?.click()} type="button">Restore encrypted backup</button>
+            </div>
           </section>
 
           <section className="panel rounded-2xl p-6 lg:col-span-2">
