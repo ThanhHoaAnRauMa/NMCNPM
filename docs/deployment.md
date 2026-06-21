@@ -46,6 +46,7 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 | `PORT`, `NODE_ENV`, `CORS_ORIGIN` | Production | API runtime and allowed frontend origin |
 | `JWT_SECRET`, `JWT_REFRESH_SECRET` | Yes | Use different random secrets, at least 32 chars |
 | `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` | No | Defaults `15m`, `7d` |
+| `KYC_REVIEWER_USER_IDS` | For KYC review | Comma-separated MongoDB user ObjectIds; keep empty to deny all reviewers |
 | `GEMINI_API_KEY` | For AI | Gemini API key |
 | `GEMINI_MODEL`, `GEMINI_*_TIMEOUT_MS`, `AI_MAX_*` | No | AI model, limits, timeouts |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | For files | Encrypted blob storage |
@@ -83,4 +84,3 @@ Frontend production deployment is **Not Configured**. The repository builds a de
 * No Atlas provisioning/migration automation.
 * No secret rotation, metrics, tracing, or central log sink.
 * No frontend hosting workflow.
-* No committed frontend lockfile in the current environment.

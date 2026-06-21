@@ -167,6 +167,9 @@ Indexes:
 | `pubkey` | String | Yes | Public-key snapshot |
 | `status` | String enum | No | `PENDING`, `VERIFIED`, `REJECTED`; submission creates `PENDING` only |
 | `verifiedAt` | Date | No | Verification timestamp |
+| `reviewedAt` | Date | No | Reviewer decision timestamp |
+| `reviewedBy` | ObjectId -> `User` | No | Allowlisted reviewer audit reference |
+| `rejectionReason` | String | No | Rejection explanation, max 500 chars |
 | timestamps | Date | Auto | `createdAt`, `updatedAt` |
 
 Indexes:
@@ -174,6 +177,7 @@ Indexes:
 | Index | Purpose |
 | --- | --- |
 | `{ userId: 1 }` unique | One active submission per user |
+| `{ status: 1, createdAt: 1, _id: 1 }` | Ordered reviewer queue |
 
 ## Query Helpers
 
