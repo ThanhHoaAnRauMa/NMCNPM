@@ -15,7 +15,7 @@
 ```bash
 npm ci
 npm ci --prefix src/backend
-npm install --prefix frontend
+npm ci --prefix frontend
 npm test
 npm --prefix frontend run check
 npm start
@@ -46,6 +46,7 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 | `PORT`, `NODE_ENV`, `CORS_ORIGIN` | Production | API runtime and allowed frontend origin |
 | `JWT_SECRET`, `JWT_REFRESH_SECRET` | Yes | Use different random secrets, at least 32 chars |
 | `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` | No | Defaults `15m`, `7d` |
+| `KYC_REVIEWER_USER_IDS` | For KYC review | Comma-separated MongoDB user ObjectIds; keep empty to deny all reviewers |
 | `GEMINI_API_KEY` | For AI | Gemini API key |
 | `GEMINI_MODEL`, `GEMINI_*_TIMEOUT_MS`, `AI_MAX_*` | No | AI model, limits, timeouts |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | For files | Encrypted blob storage |
@@ -59,6 +60,7 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 Backend `Dockerfile` installs root production dependencies and `src/backend` production dependencies, then runs the canonical `src/index.js` as the unprivileged `node` user.
 
 Frontend `frontend/Dockerfile` builds static assets with Node 24 and serves them from `nginx:1.27-alpine` with SPA fallback.
+Both frontend CI and the image build install the committed lockfile with `npm ci`.
 
 ## CI
 
@@ -83,4 +85,3 @@ Frontend production deployment is **Not Configured**. The repository builds a de
 * No Atlas provisioning/migration automation.
 * No secret rotation, metrics, tracing, or central log sink.
 * No frontend hosting workflow.
-* No committed frontend lockfile in the current environment.

@@ -17,6 +17,7 @@ const chatRoutes = require('../../src/backend/src/routes/chat.routes.js')
 const groupRoutes = require('../../src/backend/src/routes/group.routes.js')
 const kycRoutes = require('../../src/backend/src/routes/kyc.routes.js')
 const userRoutes = require('../../src/backend/src/routes/user.routes.js')
+const Message = require('../../src/backend/src/models/Message.model.js')
 
 const app = express()
 app.use(express.json())
@@ -29,7 +30,7 @@ app.use('/kyc', kycRoutes)
 let mongo
 
 before(async () => {
-  mongo = await MongoMemoryServer.create()
+  mongo = await MongoMemoryServer.create({ instance: { launchTimeout: 60_000 } })
   await mongoose.connect(mongo.getUri())
 })
 
@@ -39,7 +40,7 @@ beforeEach(async () => {
 
 after(async () => {
   await mongoose.disconnect()
-  await mongo.stop()
+  if (mongo) await mongo.stop()
 })
 
 async function register(username, email) {
@@ -93,6 +94,22 @@ describe('integrated feature API', () => {
     assert.equal(compatibilityList.body.conversations.length, 1)
     assert.equal(String(compatibilityList.body.conversations[0].conversationId), String(created.body.conversationId))
 
+    await Message.create({
+      conversationId: created.body.conversationId,
+      senderId: alice.user.id,
+      encryptedContent: 'ciphertext',
+      signature: 'signature',
+      deletedForSender: true,
+    })
+    const regularHistory = await request(app)
+      .get(`/chat/${created.body.conversationId}/messages`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(regularHistory.body.messages.length, 0)
+    const forensicHistory = await request(app)
+      .get(`/chat/${created.body.conversationId}/messages?includeHidden=true`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(forensicHistory.body.messages.length, 1)
+
     const outsiderList = await request(app)
       .get('/groups/all')
       .set('Authorization', `Bearer ${carol.accessToken}`)
@@ -112,5 +129,44 @@ describe('integrated feature API', () => {
 
     const status = await request(app).get('/kyc/status').set('Authorization', `Bearer ${alice.accessToken}`)
     assert.equal(status.body.kycStatus, 'PENDING')
+  })
+
+  test('restricts KYC reviews and synchronizes reviewer decisions', async () => {
+    const alice = await register('alice', 'alice@example.com')
+    const reviewer = await register('reviewer', 'reviewer@example.com')
+    const submitted = await request(app)
+      .post('/kyc/submit')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ hash: 'b'.repeat(64), signature: 'signed-hash', pubkey: 'public-key' })
+
+    const denied = await request(app)
+      .get('/kyc/reviews')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(denied.status, 403)
+
+    process.env.KYC_REVIEWER_USER_IDS = reviewer.user.id
+    const queue = await request(app)
+      .get('/kyc/reviews')
+      .set('Authorization', `Bearer ${reviewer.accessToken}`)
+    assert.equal(queue.status, 200)
+    assert.equal(queue.body.records.length, 1)
+
+    const reviewed = await request(app)
+      .patch(`/kyc/reviews/${submitted.body.kycRecord.id}`)
+      .set('Authorization', `Bearer ${reviewer.accessToken}`)
+      .send({ status: 'REJECTED', rejectionReason: 'The submitted proof cannot be validated.' })
+    assert.equal(reviewed.status, 200)
+    assert.equal(reviewed.body.kycRecord.status, 'REJECTED')
+
+    const status = await request(app).get('/kyc/status').set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(status.body.kycStatus, 'REJECTED')
+
+    const resubmitted = await request(app)
+      .post('/kyc/submit')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ hash: 'c'.repeat(64), signature: 'new-signature', pubkey: 'public-key' })
+    assert.equal(resubmitted.status, 201)
+    assert.equal(resubmitted.body.kycRecord.status, 'PENDING')
+    delete process.env.KYC_REVIEWER_USER_IDS
   })
 })

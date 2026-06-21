@@ -65,7 +65,7 @@ test('MerkleCommit and KYCRecord reject non-SHA-256 hashes', async () => {
     new MerkleCommit({ conversationId, rootHash: 'invalid' }).validate(),
     /rootHash/
   )
-  await assert.rejects(new KYCRecord({ userId, hash: 'invalid', signature: 'sig' }).validate(), /hash/)
+  await assert.rejects(new KYCRecord({ userId, docHash: 'invalid', signature: 'sig', pubkey: 'key' }).validate(), /docHash/)
 })
 
 test('User validates identity fields and keeps password hidden by default', async () => {

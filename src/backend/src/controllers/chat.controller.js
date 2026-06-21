@@ -35,10 +35,10 @@ exports.getMessages = async (req, res) => {
 
     const requestedLimit = Number.parseInt(req.query.limit, 10);
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 30;
-    const query = {
-      conversationId: conversation._id,
-      $or: [{ deletedForSender: false }, { deletedForSender: { $exists: false } }, { senderId: { $ne: req.userId } }],
-    };
+    const query = { conversationId: conversation._id };
+    if (req.query.includeHidden !== "true") {
+      query.$or = [{ deletedForSender: false }, { deletedForSender: { $exists: false } }, { senderId: { $ne: req.userId } }];
+    }
 
     if (req.query.before) {
       if (!validId(req.query.before)) {

@@ -1,8 +1,8 @@
 FROM node:24-alpine AS build
 
 WORKDIR /app
-COPY package.json ./
-RUN npm install --no-audit --no-fund
+COPY package*.json ./
+RUN npm ci --no-audit --no-fund
 COPY . .
 
 ARG VITE_API_URL=http://localhost:3000

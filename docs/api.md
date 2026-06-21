@@ -54,7 +54,7 @@ Successful register/login response:
 | POST | `/users/:id/unblock` | None | Unblock user |
 | POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find or create direct conversation |
 | GET | `/chat/conversations` | None | List member conversations with members and last message |
-| GET | `/chat/:conversationId/messages?before=&limit=` | Limit 1-100 | Cursor history; membership required |
+| GET | `/chat/:conversationId/messages?before=&limit=&includeHidden=` | Limit 1-100 | Cursor history; membership required; `includeHidden=true` restores sender-hidden records for evidence export |
 | DELETE | `/chat/messages/:messageId` | None | Sender-only local-hide flag; does not delete forensic record |
 
 ## Groups
@@ -96,8 +96,10 @@ Cloudinary stores ciphertext. The browser downloads and decrypts it locally.
 | POST | `/kyc/submit` | `{ hash, signature, pubkey }`; creates `PENDING`, never auto-verifies |
 | GET | `/kyc/status` | Current user's status |
 | GET | `/kyc/status/:userId` | Authenticated status lookup |
+| GET | `/kyc/reviews?status=&limit=` | Reviewer allowlist | Review queue; status defaults to `PENDING`, limit max 100 |
+| PATCH | `/kyc/reviews/:recordId` | Reviewer allowlist | `{ status: "VERIFIED" | "REJECTED", rejectionReason? }` |
 
-An administrative review API is **Not Implemented**.
+Reviewer access is controlled by `KYC_REVIEWER_USER_IDS`. Reviewers cannot decide their own submission. A rejected user may submit a replacement proof; external document-provider verification remains **Not Implemented**.
 
 ## Temporary Message Search
 
@@ -148,8 +150,7 @@ Connect Socket.IO with `auth: { token: accessToken }`. Main client events are `j
 
 | API | Status |
 | --- | --- |
-| KYC reviewer/admin decision | Not Implemented |
 | Merkle commit/proof-generation/dispute REST API | Not Implemented |
-| Evidence transcript export | Not Implemented |
+| Evidence transcript export REST API | Not Implemented by design; the browser exports and verifies packages locally |
 | Refresh-token revocation/session inventory | Not Implemented |
 | OpenAPI/Swagger specification | Not Found; `docs/api/auth.json` is a small Postman collection only |

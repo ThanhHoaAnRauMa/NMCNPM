@@ -133,3 +133,36 @@ This file records decisions that can be inferred from the current implementation
 | Alternatives Considered | Add an unconfigured Vercel action. Rejected because it creates a misleading deployment claim. |
 | Decision | CI builds/tests the frontend and image; production frontend deployment remains explicitly unconfigured. |
 | Consequences | A project owner must select hosting and add secrets/project identifiers. |
+
+## Allowlisted Manual KYC Review
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | KYC submissions need an authority, but the repository has no trusted role bootstrap or external identity provider. |
+| Rationale | A deployment-controlled ObjectId allowlist adds least-privilege review without allowing clients to assign themselves an admin role. |
+| Alternatives Considered | Add a client-writable role field; auto-verify signed hashes. Both allow privilege or trust escalation. |
+| Decision | Protect queue/decision routes with `KYC_REVIEWER_USER_IDS`, prohibit self-review, retain audit metadata, and allow replacement after rejection. |
+| Consequences | Operators must configure reviewer IDs, and reviewers still need an out-of-band document validation process. |
+
+## Password-Encrypted Device-Key Backup
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | IndexedDB loss made persisted ciphertext permanently unreadable on a replacement device. |
+| Rationale | Client-side PBKDF2-SHA-256 and AES-256-GCM recovery preserves server blindness while enabling manual transfer. |
+| Alternatives Considered | Upload raw keys; server-managed recovery. Both give the backend custody of decryption keys. |
+| Decision | Export a versioned encrypted JSON backup bound to the account user ID and restore it locally before republishing only its public bundle. |
+| Consequences | Users must protect both backup and password; there is no forgotten-password recovery for the key file. |
+
+## Browser-Owned Evidence and Root Transactions
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | Evidence export needs plaintext and root commits need an EVM signer, neither of which the backend safely owns. |
+| Rationale | Local package generation preserves E2EE, while explicit participant-wallet transactions avoid a custodial server key. |
+| Alternatives Considered | Backend decryption; unattended backend signer. These expose plaintext or create a high-impact custody secret. |
+| Decision | Build and verify evidence/Merkle proofs in the browser and use ethers for room, propose, dispute, confirm, and verification calls. |
+| Consequences | Root commits are user-triggered rather than periodic, and contract participant wallets must be entered by users. |

@@ -16,6 +16,7 @@ out/
 node_modules/
 npm-debug.log*
 coverage/
+frontend/dist/
 
 knowledge.md
 sos.md
