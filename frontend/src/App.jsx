@@ -79,6 +79,13 @@ export default function App() {
     }
   }
 
+  const restoreDeviceIdentity = async (restored) => {
+    await auth.api.post('/users/pubkey', { publicKey: restored.publicBundle })
+    await saveIdentity(currentUserId, restored)
+    setIdentity({ userId: currentUserId, ...restored })
+    await refreshConversations(selectedId)
+  }
+
   const updateSessionUser = (user) => {
     auth.setSession({ ...auth.session, user: { ...auth.session.user, ...user, id: user.id || user._id } })
   }
@@ -114,8 +121,8 @@ export default function App() {
           )}
           <div className="min-h-0 flex-1">
             {view === 'chat' && <ChatWorkspace api={auth.api} conversation={selectedConversation} currentUser={auth.session.user} identity={identity} socket={socket} />}
-            {view === 'profile' && <ProfilePanel api={auth.api} identity={identity} onCreateIdentity={createDeviceIdentity} onProfileChanged={updateSessionUser} />}
-            {view === 'forensics' && <ForensicsPanel />}
+            {view === 'profile' && <ProfilePanel api={auth.api} identity={identity} onCreateIdentity={createDeviceIdentity} onProfileChanged={updateSessionUser} onRestoreIdentity={restoreDeviceIdentity} userId={currentUserId} />}
+            {view === 'forensics' && <ForensicsPanel api={auth.api} conversations={conversations} currentUser={auth.session.user} identity={identity} />}
           </div>
         </section>
       </div>
