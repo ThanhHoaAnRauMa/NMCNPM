@@ -54,7 +54,7 @@ Successful register/login response:
 | POST | `/users/:id/unblock` | None | Unblock user |
 | POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find or create direct conversation |
 | GET | `/chat/conversations` | None | List member conversations with members and last message |
-| GET | `/chat/:conversationId/messages?before=&limit=` | Limit 1-100 | Cursor history; membership required |
+| GET | `/chat/:conversationId/messages?before=&limit=&includeHidden=` | Limit 1-100 | Cursor history; membership required; `includeHidden=true` restores sender-hidden records for evidence export |
 | DELETE | `/chat/messages/:messageId` | None | Sender-only local-hide flag; does not delete forensic record |
 
 ## Groups

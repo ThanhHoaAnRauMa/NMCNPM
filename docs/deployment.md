@@ -15,7 +15,7 @@
 ```bash
 npm ci
 npm ci --prefix src/backend
-npm install --prefix frontend
+npm ci --prefix frontend
 npm test
 npm --prefix frontend run check
 npm start
@@ -60,6 +60,7 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 Backend `Dockerfile` installs root production dependencies and `src/backend` production dependencies, then runs the canonical `src/index.js` as the unprivileged `node` user.
 
 Frontend `frontend/Dockerfile` builds static assets with Node 24 and serves them from `nginx:1.27-alpine` with SPA fallback.
+Both frontend CI and the image build install the committed lockfile with `npm ci`.
 
 ## CI
 
