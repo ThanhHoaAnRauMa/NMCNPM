@@ -40,7 +40,7 @@ export default function ForensicsPanel({ api, conversations, currentUser, identi
     const messages = []
     let before = null
     do {
-      const query = before ? `?limit=100&before=${before}` : '?limit=100'
+      const query = before ? `?limit=100&includeHidden=true&before=${before}` : '?limit=100&includeHidden=true'
       const page = await api.get(`/chat/${selected._id}/messages${query}`)
       messages.unshift(...page.messages)
       before = page.nextCursor
