@@ -17,6 +17,7 @@ const chatRoutes = require('../../src/backend/src/routes/chat.routes.js')
 const groupRoutes = require('../../src/backend/src/routes/group.routes.js')
 const kycRoutes = require('../../src/backend/src/routes/kyc.routes.js')
 const userRoutes = require('../../src/backend/src/routes/user.routes.js')
+const Message = require('../../src/backend/src/models/Message.model.js')
 
 const app = express()
 app.use(express.json())
@@ -92,6 +93,22 @@ describe('integrated feature API', () => {
     assert.equal(compatibilityList.status, 200)
     assert.equal(compatibilityList.body.conversations.length, 1)
     assert.equal(String(compatibilityList.body.conversations[0].conversationId), String(created.body.conversationId))
+
+    await Message.create({
+      conversationId: created.body.conversationId,
+      senderId: alice.user.id,
+      encryptedContent: 'ciphertext',
+      signature: 'signature',
+      deletedForSender: true,
+    })
+    const regularHistory = await request(app)
+      .get(`/chat/${created.body.conversationId}/messages`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(regularHistory.body.messages.length, 0)
+    const forensicHistory = await request(app)
+      .get(`/chat/${created.body.conversationId}/messages?includeHidden=true`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(forensicHistory.body.messages.length, 1)
 
     const outsiderList = await request(app)
       .get('/groups/all')
