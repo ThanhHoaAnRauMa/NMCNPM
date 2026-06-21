@@ -50,8 +50,9 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Opt-in 24-hour search snippets | Implemented; disabled by default in UI |
 | Gemini moderation before encryption | Implemented with allow-on-provider-failure policy |
 | Gemini conversation summary | Implemented only for explicit client-supplied plaintext |
-| KYC proof submission | Implemented as `PENDING`; reviewer workflow is missing |
-| On-chain Merkle proof verification | Implemented in frontend when contract address/proof are supplied |
+| KYC proof review | Submit, allowlisted review/reject, audit metadata, and rejected resubmission implemented |
+| Device-key recovery | Password-encrypted local export/import implemented; no server key custody |
+| Forensic evidence | Local transcript package, Merkle proof/signature verification, room/root wallet actions implemented |
 
 ## Technical Constraints
 
@@ -69,14 +70,13 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 
 | Area | Gap |
 | --- | --- |
-| KYC | No reviewer/admin API, document provider, rejection workflow, or verified-at authority |
-| Forensics | No backend proof generation, periodic root commit worker, dispute API, or evidence export package |
-| Multi-device crypto | No private-key backup/recovery or trusted-device transfer |
+| KYC | External identity/document provider is not integrated; reviewer IDs require operator configuration |
+| Forensics | No unattended periodic root worker; wallet approval is required to avoid a server custody key |
+| Multi-device crypto | Encrypted manual recovery exists; no automatic trusted-device transfer or key history |
 | Privacy mode | Ephemeral delivery has no offline recovery by design |
 | Attachments | Requires Cloudinary credentials and browser CORS access to encrypted blobs |
 | Deployment | Backend Render secrets and a frontend hosting target must be configured externally |
 | Operations | No Atlas automation, secret rotation workflow, metrics, tracing, or centralized logs |
-| Dependency lock | `frontend/package-lock.json` has not been generated in this environment; CI currently installs from pinned semver ranges |
 
 ## Validation Entry Points
 

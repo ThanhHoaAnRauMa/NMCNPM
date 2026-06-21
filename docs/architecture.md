@@ -35,14 +35,23 @@ flowchart TD
 ## Message Security Flow
 
 1. Each browser device creates an RSA-OAEP key pair and an ECDSA P-256 key pair.
-2. Private JWKs are stored in IndexedDB; the public bundle is stored on `User.publicKey`.
+2. Private JWKs are stored in IndexedDB; the public bundle is stored on `User.publicKey`. Users can export a password-encrypted PBKDF2/AES-GCM backup and restore it only to the same account.
 3. Before sending text, the client explicitly calls AI moderation with plaintext.
 4. The client creates a random AES-256-GCM key, encrypts content, and RSA-wraps that AES key for every member.
 5. The client signs the serialized encrypted envelope and emits it through authenticated Socket.IO.
 6. KYC-mode ciphertext is stored in MongoDB. Privacy-mode ciphertext is relayed only.
 7. Recipients unwrap/decrypt locally and verify the sender signature against the published key.
 
-Changing a public key does not re-encrypt history. Multi-device key transfer is not implemented.
+Changing a public key does not re-encrypt history. Encrypted file transfer provides manual multi-device recovery; automatic trusted-device synchronization is not implemented.
+
+## Forensic Flow
+
+1. The authenticated browser pages through persisted KYC-mode ciphertext and decrypts readable transcript entries locally.
+2. It commits deterministic message metadata, ciphertext, and signatures into sorted-pair Keccak-256 Merkle leaves compatible with OpenZeppelin `MerkleProof`.
+3. The evidence JSON contains transcript text, signed ciphertext, sender public-key snapshots, leaves, proofs, and the root. Local verification recomputes every leaf/proof and verifies every ECDSA signature.
+4. An EVM wallet creates the contract room and explicitly signs propose, dispute, confirm, or proof-verification actions. Wallet private keys do not reach Express.
+
+Transcript plaintext in an exported package is for authorized human review; its integrity is tied indirectly to the included decryptable ciphertext. The package itself must be handled as sensitive evidence.
 
 ## HTTP Boundaries
 
@@ -76,6 +85,6 @@ Socket authentication occurs during the handshake with `auth.token`. Room join, 
 ## Known Architecture Gaps
 
 * Root and feature directories still contain parallel schema declarations; the canonical runtime sharing rule is documented in `docs/database.md`.
-* There is no worker connecting MongoDB message logs to periodic on-chain Merkle commits.
-* There is no evidence export/proof-generation service.
+* Root proposals require an explicit participant-wallet transaction; there is no unattended signer or periodic commit worker.
+* Historical signatures can fail after public-key rotation because the user schema has no public-key history.
 * Refresh tokens are returned to JavaScript because cookie-based session rotation is not implemented.
