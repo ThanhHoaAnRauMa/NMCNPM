@@ -84,7 +84,7 @@ The backend syntax step checks `src/backend/server.js` and JavaScript under `src
 
 The deploy workflow conditionally triggers the Render backend after successful CI on `main` using `RENDER_API_KEY` and `RENDER_SERVICE_ID`. Render also watches `main` for automatic deploys. The frontend is built with `VITE_API_URL` set to the production API, and the API allows the production frontend through `CORS_ORIGIN`.
 
-Gemini is configured on the backend and must be verified through authenticated `/ai/moderate` or `/ai/summarize` requests after deployment. Cloudinary, Sepolia contract details, KYC reviewer IDs, and GitHub deployment secrets remain operator-managed configuration.
+Gemini and Cloudinary are configured on the production backend and must be verified through authenticated AI and encrypted-file requests after deployment. Sepolia contract details, KYC reviewer IDs, and GitHub deployment secrets remain operator-managed configuration.
 
 ## Operational Gaps
 
