@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { API_URL, ApiError, createApiClient } from '../lib/api.js'
 
 const SESSION_KEY = 'secure-chat-session'
-const AUTH_TIMEOUT_MS = 20_000
+const AUTH_TIMEOUT_MS = 60_000
 
 function readSession() {
   try {

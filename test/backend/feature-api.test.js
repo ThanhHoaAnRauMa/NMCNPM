@@ -135,6 +135,19 @@ describe('integrated feature API', () => {
     const legacyCollision = await request(app).post('/auth/login').send({ identifier: 'alicelogin', password: 'different-horse-42' })
     assert.equal(legacyCollision.status, 200)
     assert.equal(legacyCollision.body.user.username, 'ALIceLogin')
+
+    await User.create({ username: 'alice.login@example.com', email: 'username-owner@example.com', password: await bcrypt.hash('username-password-42', 12) })
+    const emailShapedUsername = await request(app).post('/auth/login').send({ identifier: 'alice.login@example.com', password: 'username-password-42' })
+    assert.equal(emailShapedUsername.status, 200)
+    assert.equal(emailShapedUsername.body.user.username, 'alice.login@example.com')
+
+    const ambiguousEmailOwner = await request(app).post('/auth/login').send({ identifier: 'alice.login@example.com', password: 'correct-horse-42' })
+    assert.equal(ambiguousEmailOwner.status, 200)
+    assert.equal(ambiguousEmailOwner.body.user.username, 'aliceLogin')
+
+    const prefixedUsername = await request(app).post('/auth/login').send({ identifier: '@aliceLogin', password: 'correct-horse-42' })
+    assert.equal(prefixedUsername.status, 200)
+    assert.equal(prefixedUsername.body.user.username, 'aliceLogin')
   })
 
   test('protects private routes and supports auth refresh', async () => {
