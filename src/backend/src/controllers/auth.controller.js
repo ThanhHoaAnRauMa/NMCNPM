@@ -69,13 +69,23 @@ exports.login = async (req, res) => {
       return res.status(400).json({ success: false, message: "Username or email and password are required.", code: "MISSING_FIELDS" });
     }
 
-    const usernameLogin = !identifier.includes("@");
-    const candidates = usernameLogin
-      ? await User.find({ username: exactCaseInsensitive(identifier) }).select("+password").limit(10)
-      : [await User.findOne({ email: identifier.toLowerCase() }).select("+password")].filter(Boolean);
-    const exactCandidate = usernameLogin
-      ? candidates.find((candidate) => candidate.username === identifier)
-      : candidates[0];
+    const usernameIdentifiers = [identifier];
+    if (identifier.startsWith("@") && identifier.length > 1) usernameIdentifiers.push(identifier.slice(1));
+    const [usernameCandidates, emailCandidate] = await Promise.all([
+      User.find({
+        $or: usernameIdentifiers.map((username) => ({ username: exactCaseInsensitive(username) })),
+      }).select("+password").limit(10),
+      identifier.includes("@")
+        ? User.findOne({ email: identifier.toLowerCase() }).select("+password")
+        : null,
+    ]);
+    const candidates = [emailCandidate, ...usernameCandidates]
+      .filter((candidate, index, all) => candidate && all.findIndex((item) => item?._id.toString() === candidate._id.toString()) === index);
+    const exactCandidate = candidates.find((candidate) => (
+      candidate.email === identifier.toLowerCase()
+      || candidate.username === identifier
+      || (identifier.startsWith("@") && candidate.username === identifier.slice(1))
+    ));
     const orderedCandidates = exactCandidate
       ? [exactCandidate, ...candidates.filter((candidate) => candidate._id.toString() !== exactCandidate._id.toString())]
       : candidates;
@@ -93,11 +103,12 @@ exports.login = async (req, res) => {
     }
 
     if (!user) {
-      if (lockedMatch || exactCandidate?.isLocked()) {
-        const lockedUser = lockedMatch || exactCandidate;
+      const uniquelyLocked = candidates.length === 1 && candidates[0].isLocked() ? candidates[0] : null;
+      if (lockedMatch || uniquelyLocked) {
+        const lockedUser = lockedMatch || uniquelyLocked;
         return res.status(423).json({ success: false, message: "Account is temporarily locked.", code: "ACCOUNT_LOCKED", lockUntil: lockedUser.lockUntil });
       }
-      const failedCandidate = exactCandidate || (candidates.length === 1 ? candidates[0] : null);
+      const failedCandidate = candidates.length === 1 ? candidates[0] : null;
       if (failedCandidate) {
         const loginAttempts = (failedCandidate.loginAttempts || 0) + 1;
         const lockUntil = loginAttempts >= MAX_LOGIN_ATTEMPTS ? new Date(Date.now() + LOCK_DURATION_MS) : null;
