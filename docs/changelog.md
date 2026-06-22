@@ -20,6 +20,7 @@ Fixed:
 
 * Prevented healthy Gemini requests from unnecessarily entering the allow-on-provider-failure fallback under normal production network latency.
 * Deferred Cloudinary SDK configuration until request time so runtime environment variables are available before upload or deletion.
+* Replaced serif heading fallbacks with a cross-platform sans-serif stack that renders Vietnamese diacritics consistently.
 
 Removed:
 
