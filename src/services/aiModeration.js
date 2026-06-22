@@ -1,12 +1,13 @@
 import { generateGeminiText } from './geminiClient.js'
 import { buildModerationPrompt, parseModerationJson } from './aiPrompts.js'
 
-export const MAX_MODERATION_TIMEOUT_MS = 2000
+export const DEFAULT_MODERATION_TIMEOUT_MS = 5000
+export const MAX_MODERATION_TIMEOUT_MS = 10000
 export const MAX_MODERATION_TEXT_LENGTH = 4000
 
 function normalizeModerationTimeout(value) {
   const parsed = Number(value)
-  if (!Number.isInteger(parsed) || parsed < 1) return MAX_MODERATION_TIMEOUT_MS
+  if (!Number.isInteger(parsed) || parsed < 1) return DEFAULT_MODERATION_TIMEOUT_MS
   return Math.min(parsed, MAX_MODERATION_TIMEOUT_MS)
 }
 

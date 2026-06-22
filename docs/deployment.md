@@ -48,7 +48,7 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 | `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` | No | Defaults `15m`, `7d` |
 | `KYC_REVIEWER_USER_IDS` | For KYC review | Comma-separated MongoDB user ObjectIds; keep empty to deny all reviewers |
 | `GEMINI_API_KEY` | For AI | Gemini API key |
-| `GEMINI_MODEL`, `GEMINI_*_TIMEOUT_MS`, `AI_MAX_*` | No | AI model, limits, timeouts |
+| `GEMINI_MODEL`, `GEMINI_*_TIMEOUT_MS`, `AI_MAX_*` | No | AI model, limits, and timeouts; moderation defaults to 5 seconds and is capped at 10 seconds |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | For files | Encrypted blob storage |
 | `MAX_FILE_SIZE_MB` | No | Default 10 MB |
 | `VITE_API_URL` | Frontend build | Public API/Socket.IO URL |
@@ -76,12 +76,18 @@ The backend syntax step checks `src/backend/server.js` and JavaScript under `src
 
 ## Production
 
-The existing deploy workflow conditionally triggers a Render backend service after successful CI on `main` using `RENDER_API_KEY` and `RENDER_SERVICE_ID`.
+| Component | URL | Platform | Status |
+| --- | --- | --- | --- |
+| API and Socket.IO | `https://secure-chat-forensics-api.onrender.com` | Render web service | Deployed from `main` |
+| React application | `https://secure-chat-forensics-web.onrender.com` | Render static site | Deployed from `main` |
+| Database | MongoDB Atlas | Atlas | Connected; credentials are external secrets |
 
-Frontend production deployment is **Not Configured**. The repository builds a deployable image, but no hosting target/project ID was found and deployment targets must not be invented. Set `CORS_ORIGIN` to the eventual frontend origin and rebuild with its public API URL.
+The deploy workflow conditionally triggers the Render backend after successful CI on `main` using `RENDER_API_KEY` and `RENDER_SERVICE_ID`. Render also watches `main` for automatic deploys. The frontend is built with `VITE_API_URL` set to the production API, and the API allows the production frontend through `CORS_ORIGIN`.
+
+Gemini is configured on the backend and must be verified through authenticated `/ai/moderate` or `/ai/summarize` requests after deployment. Cloudinary, Sepolia contract details, KYC reviewer IDs, and GitHub deployment secrets remain operator-managed configuration.
 
 ## Operational Gaps
 
 * No Atlas provisioning/migration automation.
 * No secret rotation, metrics, tracing, or central log sink.
-* No frontend hosting workflow.
+* Render services are provisioned manually; infrastructure-as-code is not implemented.
