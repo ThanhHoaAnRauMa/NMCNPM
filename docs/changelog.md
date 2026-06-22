@@ -9,6 +9,7 @@ Added:
 * Sepolia deployment of the `ForensisChat` implementation and ERC1967 proxy, with committed Foundry broadcast records.
 * Production KYC reviewer allowlist and GitHub-to-Render deployment secrets.
 * Local/server device-key state detection and verified sender public-key snapshots for new messages.
+* Local full-history conversation search with sender, timestamp, substring highlighting, result counts, and jump-to-message navigation.
 
 Changed:
 
@@ -16,6 +17,7 @@ Changed:
 * Updated deployment and project context documentation to reflect the live Render, Atlas, and Gemini configuration.
 * Configured the production frontend to use the deployed Sepolia proxy address.
 * Validated the GitHub Render deploy workflow and authenticated KYC review queue against production.
+* Replaced the frontend's opt-in TTL-snippet search dependency with browser-side decryption and case-insensitive substring matching; the existing search API remains compatible.
 
 Fixed:
 

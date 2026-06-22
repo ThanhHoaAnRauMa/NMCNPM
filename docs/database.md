@@ -96,6 +96,8 @@ Indexes:
 
 `MessageSearch` exists because MongoDB text indexes cannot search encrypted `Message.encryptedContent`.
 
+The collection is retained for the opt-in API contract. The frontend conversation search instead decrypts persisted `Message` records locally and therefore can perform substring matching across all decryptable history without storing new plaintext snippets.
+
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `messageId` | ObjectId -> `Message` | Yes | Unique |

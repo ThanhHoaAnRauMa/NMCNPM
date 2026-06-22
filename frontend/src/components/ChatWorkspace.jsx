@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { decryptFile, decryptText, encryptFile, encryptText, verifyPayload } from '../lib/crypto.js'
 import { conversationTitle, displayName, fileSize, shortTime, userId } from '../lib/format.js'
+import { containsSubstring, fetchAllConversationMessages, highlightSubstring } from '../lib/localMessageSearch.js'
 
 function uniqueMessages(messages) {
   const seen = new Set()
@@ -12,19 +13,10 @@ function uniqueMessages(messages) {
   })
 }
 
-function HighlightedSnippet({ value = '' }) {
-  let highlighted = false
-  return value.split(/(<\/?mark>)/i).map((part, index) => {
-    if (/^<mark>$/i.test(part)) {
-      highlighted = true
-      return null
-    }
-    if (/^<\/mark>$/i.test(part)) {
-      highlighted = false
-      return null
-    }
-    return highlighted ? <mark key={index}>{part}</mark> : <span key={index}>{part}</span>
-  })
+function HighlightedText({ value = '', keyword = '' }) {
+  return highlightSubstring(value, keyword).map((part, index) => part.match
+    ? <mark className="rounded bg-amber/30 px-0.5 text-paper" key={index}>{part.text}</mark>
+    : <span key={index}>{part.text}</span>)
 }
 
 export default function ChatWorkspace({ api, socket, conversation, currentUser, identity, keyStatus, onKeyMismatch }) {
@@ -37,11 +29,15 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
   const [panel, setPanel] = useState(null)
   const [summary, setSummary] = useState(null)
   const [searchKeyword, setSearchKeyword] = useState('')
+  const [searchedKeyword, setSearchedKeyword] = useState('')
   const [searchResults, setSearchResults] = useState([])
-  const [indexSearch, setIndexSearch] = useState(() => localStorage.getItem('secure-chat-index-search') === 'true')
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchStats, setSearchStats] = useState(null)
+  const [focusedMessageId, setFocusedMessageId] = useState(null)
   const pendingPlaintext = useRef(new Map())
   const typingTimer = useRef(null)
   const fileInput = useRef(null)
+  const searchRun = useRef(0)
   const currentUserId = currentUser.id || currentUser._id
   const isPrivacy = ['PRIVACY', 'Privacy'].includes(conversation?.mode)
 
@@ -79,6 +75,12 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     setMessages([])
     setError('')
     setSummary(null)
+    setSearchLoading(false)
+    setSearchedKeyword('')
+    setSearchResults([])
+    setSearchStats(null)
+    setPanel(null)
+    searchRun.current += 1
     if (!conversation?._id) return () => { active = false }
 
     setLoading(true)
@@ -99,14 +101,6 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       if (!active) return
       setMessages((current) => uniqueMessages([...current.filter((item) => item.tempId !== message.tempId || item._id), hydrated]))
       const plaintext = pendingPlaintext.current.get(message.tempId)
-      if (plaintext && indexSearch && message._id && !isPrivacy) {
-        api.post('/messages/index-snippet', {
-          messageId: message._id,
-          conversationId: conversation._id,
-          senderId: currentUserId,
-          snippet: plaintext.slice(0, 2000),
-        }).catch(() => {})
-      }
       if (plaintext) pendingPlaintext.current.delete(message.tempId)
     }
     const onPrivateMessage = async (message) => {
@@ -144,7 +138,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     }
   // hydrateMessage intentionally follows the selected conversation snapshot.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, conversation?._id, socket, identity, currentUserId, indexSearch])
+  }, [api, conversation?._id, socket, identity, currentUserId])
 
   const ensureReady = () => {
     if (!identity) throw new Error('Thiết bị chưa có khóa mã hóa.')
@@ -239,12 +233,43 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
 
   const runSearch = async (event) => {
     event.preventDefault()
+    const keyword = searchKeyword.trim()
+    if (!keyword) return setSearchResults([])
+    const runId = ++searchRun.current
+    setSearchedKeyword(keyword)
+    setSearchLoading(true)
+    setError('')
     try {
-      const payload = await api.post('/messages/search', { keyword: searchKeyword, conversationId: conversation._id, limit: 30 })
-      setSearchResults(payload.results)
+      const rawMessages = isPrivacy ? messages : await fetchAllConversationMessages(api, conversation._id)
+      const hydrated = isPrivacy ? [...messages] : []
+      if (!isPrivacy) {
+        for (let index = 0; index < rawMessages.length; index += 50) {
+          hydrated.push(...await Promise.all(rawMessages.slice(index, index + 50).map(hydrateMessage)))
+          if (runId !== searchRun.current) return
+        }
+      }
+      if (runId !== searchRun.current) return
+      if (!isPrivacy) setMessages(hydrated)
+      const textMessages = hydrated.filter((message) => message.msgType !== 'FILE')
+      const searchable = textMessages.filter((message) => message.decrypted)
+      const results = searchable.filter((message) => containsSubstring(message.text, keyword)).reverse()
+      setSearchResults(results)
+      setSearchStats({ total: textMessages.length, searchable: searchable.length, unreadable: textMessages.length - searchable.length })
     } catch (requestError) {
-      setError(requestError.message)
+      if (runId === searchRun.current) setError(requestError.message)
+    } finally {
+      if (runId === searchRun.current) setSearchLoading(false)
     }
+  }
+
+  const jumpToSearchResult = (messageId) => {
+    const id = String(messageId)
+    setFocusedMessageId(id)
+    setPanel(null)
+    window.setTimeout(() => {
+      document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 50)
+    window.setTimeout(() => setFocusedMessageId((current) => current === id ? null : current), 2500)
   }
 
   const summarize = async () => {
@@ -276,7 +301,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
         <header className="flex min-h-20 items-center justify-between gap-4 border-b border-line px-5 py-4 sm:px-7">
           <div className="min-w-0"><h2 className="truncate text-lg font-bold">{conversationTitle(conversation, currentUserId)}</h2><p className="mt-1 text-[11px] text-slate-500">{members.length} thành viên · <span className={isPrivacy ? 'text-amber' : 'text-mint'}>{isPrivacy ? 'Privacy / ephemeral' : 'KYC / persisted ciphertext'}</span></p></div>
           <div className="flex shrink-0 gap-2">
-            <button className="btn-secondary hidden sm:block" onClick={() => setPanel(panel === 'search' ? null : 'search')}>Tìm kiếm</button>
+            <button className="btn-secondary" onClick={() => setPanel(panel === 'search' ? null : 'search')}>Tìm kiếm</button>
             <button className="btn-secondary" disabled={isPrivacy} onClick={summarize}>AI tóm tắt</button>
           </div>
         </header>
@@ -289,7 +314,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
           {messages.map((message) => {
             const mine = userId(message.senderId) === currentUserId
             return (
-              <article className={`flex ${mine ? 'justify-end' : 'justify-start'}`} key={String(message._id || message.tempId)}>
+              <article className={`flex rounded-2xl transition ${focusedMessageId === String(message._id || message.tempId) ? 'ring-2 ring-amber/70 ring-offset-4 ring-offset-ink' : ''} ${mine ? 'justify-end' : 'justify-start'}`} id={`message-${String(message._id || message.tempId)}`} key={String(message._id || message.tempId)}>
                 <div className={`max-w-[82%] rounded-2xl border px-4 py-3 sm:max-w-[68%] ${mine ? 'border-mint/20 bg-mint/10' : 'border-line bg-white/[.035]'}`}>
                   {!mine && <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-amber">{displayName(message.senderId)}</p>}
                   {message.msgType === 'FILE' ? (
@@ -318,7 +343,6 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
             <textarea className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-slate-600" maxLength={4000} placeholder={keyStatus === 'ready' ? 'Nhập tin nhắn...' : 'Đồng bộ khóa thiết bị để nhắn tin'} rows={1} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form.requestSubmit() } }} />
             <button className="btn-primary h-10 shrink-0" disabled={!draft.trim() || sending || keyStatus !== 'ready'} type="submit">{sending ? '...' : 'Gửi'}</button>
           </div>
-          {!isPrivacy && <label className="mt-2 flex items-center gap-2 text-[10px] text-slate-600"><input checked={indexSearch} type="checkbox" onChange={(event) => { setIndexSearch(event.target.checked); localStorage.setItem('secure-chat-index-search', String(event.target.checked)) }} /> Cho phép gửi snippet plaintext lên chỉ mục tìm kiếm TTL 24 giờ</label>}
         </form>
       </section>
 
@@ -327,9 +351,16 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
           <div className="flex items-center justify-between"><p className="eyebrow">{panel === 'search' ? 'Message search' : 'AI summary'}</p><button className="text-xl text-slate-500" onClick={() => setPanel(null)}>×</button></div>
           {panel === 'search' ? (
             <>
-              <form className="mt-5 flex gap-2" onSubmit={runSearch}><input className="field" maxLength={200} placeholder="Từ khóa" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} /><button className="btn-primary" type="submit">Tìm</button></form>
-              <p className="mt-3 text-[10px] leading-5 text-slate-600">Chỉ tìm các snippet mà người gửi đã chủ động lập chỉ mục.</p>
-              <div className="mt-5 space-y-3">{searchResults.map((result) => <article className="rounded-xl border border-line bg-ink/50 p-3" key={result._id}><p className="message-mark text-xs leading-5 text-slate-300"><HighlightedSnippet value={result.highlightedSnippet} /></p><small className="mt-2 block text-slate-600">{shortTime(result.createdAt)}</small></article>)}</div>
+              <form className="mt-5 flex gap-2" onSubmit={runSearch}><input className="field" maxLength={200} placeholder="Nhập một phần nội dung" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} /><button className="btn-primary" disabled={searchLoading || !searchKeyword.trim()} type="submit">{searchLoading ? '...' : 'Tìm'}</button></form>
+              <p className="mt-3 text-[10px] leading-5 text-slate-500">Tìm substring trong toàn bộ tin nhắn giải mã được của hội thoại. Plaintext không được gửi lên máy chủ.</p>
+              {searchStats && <p className="mt-3 text-xs text-slate-400"><strong className="text-paper">{searchResults.length}</strong> kết quả · {searchStats.searchable}/{searchStats.total} tin có thể tìm{searchStats.unreadable ? ` · ${searchStats.unreadable} tin không giải mã được` : ''}</p>}
+              {!searchLoading && searchStats && searchResults.length === 0 && <p className="mt-8 text-center text-sm text-slate-500">Không tìm thấy tin nhắn chứa “{searchedKeyword}”.</p>}
+              <div className="mt-5 space-y-3">{searchResults.map((result) => (
+                <button className="w-full rounded-xl border border-line bg-ink/50 p-3 text-left transition hover:border-mint/40 hover:bg-white/[.04]" key={String(result._id || result.tempId)} onClick={() => jumpToSearchResult(result._id || result.tempId)} type="button">
+                  <span className="flex items-center justify-between gap-3"><strong className="truncate text-xs text-amber">{displayName(result.senderId)}</strong><small className="shrink-0 text-[10px] text-slate-600">{new Date(result.createdAt || result.timestamp).toLocaleString('vi-VN')}</small></span>
+                  <span className="mt-2 block whitespace-pre-wrap break-words text-xs leading-5 text-slate-300"><HighlightedText keyword={searchedKeyword} value={result.text} /></span>
+                </button>
+              ))}</div>
             </>
           ) : (
             <div className="mt-5"><div className="rounded-xl border border-mint/20 bg-mint/5 p-4"><p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{summary?.summary || 'Đang tạo tóm tắt...'}</p></div>{summary && <p className="mt-3 text-[10px] text-slate-600">{summary.messageCount} tin nhắn · {summary.cached ? 'cache' : summary.model}</p>}<p className="mt-5 text-[10px] leading-5 text-amber">Plaintext của các tin đã chọn được gửi tới Gemini khi bạn bấm tóm tắt; nguồn plaintext không được lưu trong Message.</p></div>
