@@ -5,7 +5,12 @@ import mongoose from 'mongoose'
 import request from 'supertest'
 
 import { createAiRouter } from '../../src/routes/ai.js'
-import { createContentModerationMiddleware } from '../../src/services/aiModeration.js'
+import {
+  createContentModerationMiddleware,
+  DEFAULT_MODERATION_TIMEOUT_MS,
+  MAX_MODERATION_TIMEOUT_MS,
+  moderatePlaintext,
+} from '../../src/services/aiModeration.js'
 
 function createQuery(result) {
   return {
@@ -158,6 +163,34 @@ test('POST /ai/moderate blocks harmful content and warns sender', async () => {
   assert.equal(response.status, 422)
   assert.equal(response.body.error, 'message_blocked')
   assert.equal(response.body.moderation.warning, 'Do not harass other users.')
+})
+
+test('moderation uses a production-tolerant timeout and caps overrides', async () => {
+  const originalTimeout = process.env.GEMINI_MODERATION_TIMEOUT_MS
+  const observedTimeouts = []
+
+  try {
+    delete process.env.GEMINI_MODERATION_TIMEOUT_MS
+    await moderatePlaintext('safe message', {
+      async generateText(_prompt, { timeoutMs }) {
+        observedTimeouts.push(timeoutMs)
+        return '{"harmful":false,"categories":[],"warning":""}'
+      },
+    })
+
+    process.env.GEMINI_MODERATION_TIMEOUT_MS = '60000'
+    await moderatePlaintext('another safe message', {
+      async generateText(_prompt, { timeoutMs }) {
+        observedTimeouts.push(timeoutMs)
+        return '{"harmful":false,"categories":[],"warning":""}'
+      },
+    })
+  } finally {
+    if (originalTimeout === undefined) delete process.env.GEMINI_MODERATION_TIMEOUT_MS
+    else process.env.GEMINI_MODERATION_TIMEOUT_MS = originalTimeout
+  }
+
+  assert.deepEqual(observedTimeouts, [DEFAULT_MODERATION_TIMEOUT_MS, MAX_MODERATION_TIMEOUT_MS])
 })
 
 test('moderation middleware allows messages when Gemini is unavailable', async () => {

@@ -17,7 +17,7 @@ Code is the source of truth. Requirement documents describe planned scope and mu
 | AI | Gemini moderation and opt-in summary | `src/routes/ai.js`, `src/services/` |
 | Crypto | Browser Web Crypto plus standalone Node module | `frontend/src/lib/crypto.js`, `src/crypto/` |
 | Blockchain | Foundry contract, deployment script, tests | `src/ForensisChat.sol`, `script/`, `test/` |
-| DevOps | Backend/frontend images, Compose, CI, Render backend trigger | `Dockerfile`, `frontend/Dockerfile`, `.github/` |
+| DevOps | Backend/frontend images, Compose, CI, Render production services | `Dockerfile`, `frontend/Dockerfile`, `.github/` |
 
 ## Runtime Summary
 
@@ -64,7 +64,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Feature models must use canonical DB connection | CommonJS models resolve the root Mongoose singleton through `utils/mongoose.js` |
 | Existing database contracts must remain readable | Canonical models accept the existing collection names and preserve existing fields |
 | Backend syntax CI must inspect owned source only | Checks `src/backend/server.js` and `src/backend/src`; dependency bundles are excluded |
-| Frontend production target is not selected | CI builds the image; deployment remains unconfigured |
+| Render production is manually provisioned | API and static frontend deploy from `main`; secrets remain outside Git |
 
 ## Remaining Work / Blockers
 
@@ -75,7 +75,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Multi-device crypto | Encrypted manual recovery exists; no automatic trusted-device transfer or key history |
 | Privacy mode | Ephemeral delivery has no offline recovery by design |
 | Attachments | Requires Cloudinary credentials and browser CORS access to encrypted blobs |
-| Deployment | Backend Render secrets and a frontend hosting target must be configured externally |
+| Deployment | API, frontend, Atlas, and Gemini are configured; Cloudinary, Sepolia contract details, KYC reviewer IDs, and GitHub deploy secrets remain |
 | Operations | No Atlas automation, secret rotation workflow, metrics, tracing, or centralized logs |
 
 ## Validation Entry Points

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-06-22
+
+Added:
+
+* Render production API and static frontend deployment records.
+
+Changed:
+
+* Increased Gemini moderation timeout from 2 seconds to a production-tolerant 5-second default with a 10-second configuration cap.
+* Updated deployment and project context documentation to reflect the live Render, Atlas, and Gemini configuration.
+
+Fixed:
+
+* Prevented healthy Gemini requests from unnecessarily entering the allow-on-provider-failure fallback under normal production network latency.
+
+Removed:
+
+* Not Found.
+
 ## 2026-06-21
 
 Added:
