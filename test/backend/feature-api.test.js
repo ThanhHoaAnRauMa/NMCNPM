@@ -20,7 +20,13 @@ const userRoutes = require('../../src/backend/src/routes/user.routes.js')
 const Message = require('../../src/backend/src/models/Message.model.js')
 
 const app = express()
+const realtimeEvents = []
 app.use(express.json())
+app.set('io', {
+  to(room) {
+    return { emit: (event, payload) => realtimeEvents.push({ room, event, payload }) }
+  },
+})
 app.use('/auth', authRoutes)
 app.use('/users', userRoutes)
 app.use('/chat', chatRoutes)
@@ -36,6 +42,7 @@ before(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.db.dropDatabase()
+  realtimeEvents.length = 0
 })
 
 after(async () => {
@@ -44,12 +51,31 @@ after(async () => {
 })
 
 async function register(username, email) {
-  const response = await request(app).post('/auth/register').send({ username, email, password: 'correct-horse-42' })
+  const response = await request(app).post('/auth/register').send({ username, email, password: 'correct-horse-42', confirmPassword: 'correct-horse-42' })
   assert.equal(response.status, 201)
   return response.body
 }
 
 describe('integrated feature API', () => {
+  test('requires matching password confirmation when registering', async () => {
+    const missing = await request(app).post('/auth/register').send({
+      username: 'missingConfirm',
+      email: 'missing@example.com',
+      password: 'correct-horse-42',
+    })
+    assert.equal(missing.status, 400)
+    assert.equal(missing.body.code, 'MISSING_FIELDS')
+
+    const mismatch = await request(app).post('/auth/register').send({
+      username: 'mismatchConfirm',
+      email: 'mismatch@example.com',
+      password: 'correct-horse-42',
+      confirmPassword: 'different-horse-42',
+    })
+    assert.equal(mismatch.status, 400)
+    assert.equal(mismatch.body.code, 'PASSWORD_MISMATCH')
+  })
+
   test('logs in with username, normalized email, and the legacy email field', async () => {
     await register('aliceLogin', 'alice.login@example.com')
 
@@ -98,6 +124,10 @@ describe('integrated feature API', () => {
       .set('Authorization', `Bearer ${alice.accessToken}`)
       .send({ mode: 'KYC' })
     assert.equal(created.status, 201)
+    const directNotification = realtimeEvents.find((entry) => entry.event === 'conversation_created')
+    assert.equal(directNotification.room, `user:${bob.user.id}`)
+    assert.equal(String(directNotification.payload.conversationId), String(created.body.conversationId))
+    assert.equal(directNotification.payload.mode, 'KYC')
 
     const conversations = await request(app)
       .get('/chat/conversations')
@@ -134,6 +164,14 @@ describe('integrated feature API', () => {
       .set('Authorization', `Bearer ${carol.accessToken}`)
     assert.equal(outsiderList.status, 200)
     assert.equal(outsiderList.body.conversations.length, 0)
+
+    const group = await request(app)
+      .post('/groups')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ name: 'Realtime group', mode: 'PRIVACY', memberIds: [bob.user.id, carol.user.id] })
+    assert.equal(group.status, 201)
+    const groupNotifications = realtimeEvents.filter((entry) => entry.event === 'conversation_created' && String(entry.payload.conversationId) === String(group.body.group._id))
+    assert.deepEqual(new Set(groupNotifications.map((entry) => entry.room)), new Set([`user:${bob.user.id}`, `user:${carol.user.id}`]))
   })
 
   test('keeps separate KYC and Privacy direct conversations for the same users', async () => {

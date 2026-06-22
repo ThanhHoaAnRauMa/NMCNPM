@@ -25,7 +25,7 @@ Auth endpoints, search, and AI use in-memory per-instance rate limits and return
 
 | Method | Path | Auth | Body / Notes |
 | --- | --- | --- | --- |
-| POST | `/auth/register` | No | `{ username, email, password }`; password 8-72 chars |
+| POST | `/auth/register` | No | `{ username, email, password, confirmPassword }`; both passwords are required, must match, and contain 8-72 chars |
 | POST | `/auth/login` | No | `{ identifier, password }`, where identifier is an exact username or normalized email; legacy `{ email, password }` remains accepted; locks for 15 minutes after 5 failed attempts |
 | POST | `/auth/refresh` | No | `{ refreshToken }`; returns a new access/refresh pair |
 | POST | `/auth/logout` | JWT | Marks account offline; server-side token revocation is not implemented |
@@ -40,6 +40,8 @@ Successful register/login response:
   "refreshToken": "..."
 }
 ```
+
+Registration compatibility note: clients must send `confirmPassword` after this change. Older registration payloads without it receive `400` with `code: "MISSING_FIELDS"`; unequal values receive `code: "PASSWORD_MISMATCH"`. Login requests and existing accounts are unaffected.
 
 ## Users and Conversations
 

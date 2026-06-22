@@ -39,6 +39,7 @@ After membership validation, `send_message` ensures the sender socket has joined
 | `user_typing` / `user_stop_typing` | `userId`, `conversationId` |
 | `user_status` | `userId`, `isOnline`, `lastSeen?`, `reason?` |
 | `user_key_updated` | `userId`; tells conversation participants to refresh member public keys |
+| `conversation_created` | `conversationId`, `type`, `mode`, `createdBy`; tells invited online members to refresh their authenticated conversation list |
 | `missed_messages` | `conversationId`, `messages`, `count` |
 | `socket_error` | `event`, `code`, `message`, optional `tempId` |
 
@@ -66,4 +67,4 @@ After membership validation, `send_message` ensures the sender socket has joined
 
 ## REST Companion
 
-Use `GET /chat/conversations` for the canonical member conversation list. `GET /groups/all` remains available as a compatibility endpoint returning display-oriented conversation metadata. Opening a conversation still requires `join_conversation` followed by `GET /chat/:conversationId/messages`.
+Use `GET /chat/conversations` for the canonical member conversation list. `conversation_created` is only a refresh signal; clients still fetch this authenticated endpoint and also refresh after reconnect to recover events missed while offline. `GET /groups/all` remains available as a compatibility endpoint returning display-oriented conversation metadata. Opening a conversation still requires `join_conversation` followed by `GET /chat/:conversationId/messages`.

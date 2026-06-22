@@ -79,7 +79,7 @@ Transcript plaintext in an exported package is for authorized human review; its 
 
 ## Realtime Boundaries
 
-Socket authentication occurs during the handshake with `auth.token`. Room join, send, seen, typing, and missed-message operations verify conversation membership. `user_online` no longer controls identity and cannot impersonate another user.
+Socket authentication occurs during the handshake with `auth.token`. Each connection joins its authenticated `user:<id>` room so REST conversation creation can notify invited members to refresh the canonical conversation list immediately. Room join, send, seen, typing, and missed-message operations verify conversation membership. `user_online` no longer controls identity and cannot impersonate another user.
 
 ## Data Ownership
 

@@ -39,11 +39,11 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 
 | Flow | Status |
 | --- | --- |
-| Register, username/email login, refresh, logout, temporary account lock | Implemented |
+| Register with password confirmation, username/email login, refresh, logout, temporary account lock | Implemented |
 | Local device identity and public-key publication | Implemented |
 | User search, profile update, block/unblock | Implemented |
 | Mode-specific direct conversations and group administration | Implemented |
-| Conversation sidebar listing | `GET /chat/conversations`; compatibility `GET /groups/all` |
+| Realtime conversation sidebar listing | HTTP canonical list plus invited-member Socket.IO refresh signal |
 | JWT-authenticated realtime encrypted chat | Implemented |
 | Delivered/seen, typing, missed-message recovery | Implemented |
 | Encrypted attachment upload/download | Implemented; requires Cloudinary |

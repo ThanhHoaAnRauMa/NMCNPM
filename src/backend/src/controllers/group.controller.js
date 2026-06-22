@@ -23,6 +23,17 @@ exports.createGroup = async (req, res) => {
     }
     const mode = req.body.mode === "PRIVACY" ? "PRIVACY" : "KYC";
     const group = await Conversation.create({ type: "GROUP", mode, members, groupName: name, createdBy: req.userId, admins: [req.userId] });
+    const io = req.app.get("io");
+    for (const memberId of members) {
+      if (memberId !== req.userId) {
+        io?.to(`user:${memberId}`).emit("conversation_created", {
+          conversationId: group._id,
+          type: group.type,
+          mode: group.mode,
+          createdBy: req.userId,
+        });
+      }
+    }
     return res.status(201).json({ success: true, group });
   } catch (error) {
     console.error("[createGroup]", error);

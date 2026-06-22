@@ -67,16 +67,21 @@ export default function App() {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 8,
     })
-    connection.on('connect_error', (error) => setSystemError(`Realtime: ${error.message}`))
-    connection.on('connect', () => setSystemError(''))
-    connection.on('user_key_updated', async () => {
+    const refreshFromRealtime = async () => {
       try {
         const payload = await auth.api.get('/chat/conversations')
         setConversations(payload.conversations)
       } catch (error) {
         setSystemError(error.message)
       }
+    }
+    connection.on('connect_error', (error) => setSystemError(`Realtime: ${error.message}`))
+    connection.on('connect', () => {
+      setSystemError('')
+      refreshFromRealtime()
     })
+    connection.on('conversation_created', refreshFromRealtime)
+    connection.on('user_key_updated', refreshFromRealtime)
     setSocket(connection)
     return () => {
       connection.disconnect()
