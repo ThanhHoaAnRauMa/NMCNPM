@@ -28,6 +28,8 @@ Fixed:
 * Ensured a direct-conversation creator receives the first persisted message even when sending before the asynchronous room join completes.
 * Blocked stale device identities from storing or relaying messages/files with invalid signatures, with explicit restore and synchronization recovery actions.
 * Prevented Gemini thinking tokens and database-ID-heavy prompts from producing truncated, low-value conversation summaries; partial responses are no longer cached.
+* Allowed the same user pair to maintain separate KYC and Privacy direct conversations while reusing an existing conversation of the selected mode.
+* Stabilized the parallel backend test suite by allowing MongoDB Memory Server sufficient startup time and guarding failed-start cleanup.
 
 Removed:
 

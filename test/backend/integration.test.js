@@ -87,7 +87,7 @@ before(async () => {
     import('../../src/health.js'),
   ])
 
-  mongoServer = await MongoMemoryServer.create()
+  mongoServer = await MongoMemoryServer.create({ instance: { launchTimeout: 60_000 } })
   await mongoose.connect(mongoServer.getUri())
   await syncIndexes()
 })
@@ -98,7 +98,7 @@ beforeEach(async () => {
 
 after(async () => {
   await mongoose.disconnect()
-  await mongoServer.stop()
+  if (mongoServer) await mongoServer.stop()
 })
 
 test('GET /health returns production health contract while /healthz remains compatible', async () => {

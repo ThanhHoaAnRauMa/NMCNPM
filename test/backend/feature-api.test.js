@@ -136,6 +136,49 @@ describe('integrated feature API', () => {
     assert.equal(outsiderList.body.conversations.length, 0)
   })
 
+  test('keeps separate KYC and Privacy direct conversations for the same users', async () => {
+    const alice = await register('alice', 'alice@example.com')
+    const bob = await register('bobby', 'bob@example.com')
+
+    const kyc = await request(app)
+      .post(`/users/${bob.user.id}/conversation`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ mode: 'KYC' })
+    assert.equal(kyc.status, 201)
+    assert.equal(kyc.body.conversation.mode, 'KYC')
+
+    const existingKyc = await request(app)
+      .post(`/users/${alice.user.id}/conversation`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .send({ mode: 'KYC' })
+    assert.equal(existingKyc.status, 200)
+    assert.equal(existingKyc.body.isNew, false)
+    assert.equal(String(existingKyc.body.conversationId), String(kyc.body.conversationId))
+
+    const privacy = await request(app)
+      .post(`/users/${bob.user.id}/conversation`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ mode: 'PRIVACY' })
+    assert.equal(privacy.status, 201)
+    assert.equal(privacy.body.conversation.mode, 'PRIVACY')
+    assert.notEqual(String(privacy.body.conversationId), String(kyc.body.conversationId))
+
+    const existingPrivacy = await request(app)
+      .post(`/users/${alice.user.id}/conversation`)
+      .set('Authorization', `Bearer ${bob.accessToken}`)
+      .send({ mode: 'PRIVACY' })
+    assert.equal(existingPrivacy.status, 200)
+    assert.equal(existingPrivacy.body.isNew, false)
+    assert.equal(String(existingPrivacy.body.conversationId), String(privacy.body.conversationId))
+
+    const conversations = await request(app)
+      .get('/chat/conversations')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(conversations.status, 200)
+    assert.equal(conversations.body.conversations.length, 2)
+    assert.deepEqual(new Set(conversations.body.conversations.map((item) => item.mode)), new Set(['KYC', 'PRIVACY']))
+  })
+
   test('places client-signed KYC proof in pending state', async () => {
     const alice = await register('alice', 'alice@example.com')
     const submitted = await request(app)
