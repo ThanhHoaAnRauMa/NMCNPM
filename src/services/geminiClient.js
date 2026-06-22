@@ -7,6 +7,12 @@ function normalizeTimeout(value, fallback = DEFAULT_GEMINI_TIMEOUT_MS) {
   return parsed
 }
 
+function normalizeOutputTokens(value, fallback = 768) {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 1) return fallback
+  return Math.min(parsed, 8192)
+}
+
 function extractText(payload) {
   const parts = payload?.candidates?.[0]?.content?.parts
   if (!Array.isArray(parts)) return ''
@@ -22,6 +28,8 @@ export async function generateGeminiText(
     apiKey = process.env.GEMINI_API_KEY,
     model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
     timeoutMs = normalizeTimeout(process.env.GEMINI_TIMEOUT_MS),
+    maxOutputTokens = 768,
+    thinkingBudget = 0,
     fetchImpl = globalThis.fetch,
   } = {}
 ) {
@@ -59,7 +67,8 @@ export async function generateGeminiText(
         ],
         generationConfig: {
           temperature: 0.2,
-          maxOutputTokens: 768,
+          maxOutputTokens: normalizeOutputTokens(maxOutputTokens),
+          thinkingConfig: { thinkingBudget },
         },
       }),
       signal: controller.signal,
@@ -74,6 +83,11 @@ export async function generateGeminiText(
 
     const payload = await response.json()
     const text = extractText(payload)
+    if (payload?.candidates?.[0]?.finishReason === 'MAX_TOKENS') {
+      const error = new Error('Gemini response reached the output token limit')
+      error.code = 'AI_TRUNCATED_RESPONSE'
+      throw error
+    }
     if (!text) {
       const error = new Error('Gemini returned an empty response')
       error.code = 'AI_EMPTY_RESPONSE'

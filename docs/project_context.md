@@ -49,7 +49,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Encrypted attachment upload/download | Implemented; requires Cloudinary |
 | Conversation message search | Full persisted history is decrypted and substring-searched locally; sender/time/jump results implemented |
 | Gemini moderation before encryption | Implemented with allow-on-provider-failure policy |
-| Gemini conversation summary | Implemented only for explicit client-supplied plaintext |
+| Gemini conversation summary | Explicit client-supplied plaintext, human sender labels, versioned cache, and truncated-response rejection implemented |
 | KYC proof review | Submit, allowlisted review/reject, audit metadata, and rejected resubmission implemented |
 | Device-key recovery | Password-encrypted local export/import implemented; no server key custody |
 | Forensic evidence | Local transcript package, Merkle proof/signature verification, room/root wallet actions implemented |

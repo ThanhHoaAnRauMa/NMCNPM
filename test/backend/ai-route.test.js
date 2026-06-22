@@ -47,6 +47,7 @@ test('POST /ai/summarize requires opt-in plaintext messages', async () => {
 test('POST /ai/summarize verifies message ids and stores summary without plaintext', async () => {
   const conversationId = new mongoose.Types.ObjectId()
   const messageId = new mongoose.Types.ObjectId()
+  const senderId = new mongoose.Types.ObjectId()
   const now = new Date('2026-06-04T00:00:00.000Z')
   let messageQuery
   let cacheUpdate
@@ -55,7 +56,7 @@ test('POST /ai/summarize verifies message ids and stores summary without plainte
   const MessageModel = {
     find(query) {
       messageQuery = query
-      return createQuery([{ _id: messageId }])
+      return createQuery([{ _id: messageId, senderId, timestamp: now }])
     },
   }
 
@@ -74,9 +75,17 @@ test('POST /ai/summarize verifies message ids and stores summary without plainte
     SummaryCacheModel,
     now: () => now,
     model: 'gemini-test',
+    async resolveSenderLabels(senderIds) {
+      assert.deepEqual(senderIds, [senderId.toString()])
+      return new Map([[senderId.toString(), 'Alice']])
+    },
     async generateText(prompt) {
       generateCalls += 1
       assert.match(prompt, /hello secure chat/)
+      assert.match(prompt, /Alice/)
+      assert.doesNotMatch(prompt, new RegExp(conversationId.toString()))
+      assert.doesNotMatch(prompt, new RegExp(messageId.toString()))
+      assert.doesNotMatch(prompt, new RegExp(senderId.toString()))
       return 'Short summary'
     },
   })
@@ -87,7 +96,7 @@ test('POST /ai/summarize verifies message ids and stores summary without plainte
     messages: [
       {
         messageId: messageId.toString(),
-        senderId: new mongoose.Types.ObjectId().toString(),
+        senderId: senderId.toString(),
         timestamp: now.toISOString(),
         text: 'hello secure chat',
       },

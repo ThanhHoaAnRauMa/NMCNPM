@@ -68,6 +68,17 @@ This file records decisions that can be inferred from the current implementation
 | Decision | AI routes accept explicit client-supplied plaintext after local decrypt/before encrypt, call Gemini from the backend, and do not persist source plaintext. |
 | Consequences | `/ai/summarize` verifies message ids against MongoDB metadata, caches only summary output for 1 hour, and requires frontend/user opt-in for plaintext disclosure. |
 
+## Task-Oriented Gemini Summary Generation
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | Gemini 2.5 Flash consumed most of a 768-token output budget as hidden thinking, returned `MAX_TOKENS`, and produced visibly truncated summaries dominated by ObjectIds. |
+| Rationale | Conversation summarization is a bounded transformation task; visible completeness and useful participant labels matter more than hidden reasoning. |
+| Alternatives Considered | Increase the token limit while retaining thinking; cache partial responses; expose raw database identifiers. These increase cost, preserve truncation risk, or degrade output quality. |
+| Decision | Disable thinking for text generation, reject `MAX_TOKENS`, resolve sender names server-side, omit database IDs from the prompt, and version cache keys when prompt behavior changes. |
+| Consequences | Summary and moderation calls use fewer tokens and complete more predictably. A provider/model that does not support the configured thinking option would surface as provider unavailable rather than silently returning partial output. |
+
 ## Node.js 24 Runtime
 
 | Field | Decision |

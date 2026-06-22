@@ -144,7 +144,7 @@ Body:
 }
 ```
 
-The backend verifies every message belongs to the conversation, sends explicit plaintext to Gemini, and caches only the summary for one hour. Maximums are controlled by `AI_MAX_*` variables. Privacy-mode messages are not persisted and cannot use this endpoint.
+The backend verifies every message belongs to the conversation, resolves sender display labels, removes database identifiers from the prompt, sends explicit plaintext to Gemini, and caches only a complete summary for one hour. A `MAX_TOKENS` response is rejected instead of cached. Maximums are controlled by `AI_MAX_*` variables. Privacy-mode messages are not persisted and cannot use this endpoint.
 
 ## Realtime
 

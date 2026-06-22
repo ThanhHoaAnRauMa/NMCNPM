@@ -27,6 +27,7 @@ Fixed:
 * Replaced serif heading fallbacks with a cross-platform sans-serif stack that renders Vietnamese diacritics consistently.
 * Ensured a direct-conversation creator receives the first persisted message even when sending before the asynchronous room join completes.
 * Blocked stale device identities from storing or relaying messages/files with invalid signatures, with explicit restore and synchronization recovery actions.
+* Prevented Gemini thinking tokens and database-ID-heavy prompts from producing truncated, low-value conversation summaries; partial responses are no longer cached.
 
 Removed:
 

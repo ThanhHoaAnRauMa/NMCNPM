@@ -54,6 +54,10 @@ At session startup, the frontend compares its IndexedDB public bundle with `/use
 
 Privacy conversations search only messages still present in the current browser session because their ciphertext is not persisted. The opt-in `MessageSearch` TTL API remains available for compatibility but is not used by the conversation search panel.
 
+## AI Summary Flow
+
+The browser explicitly submits locally decrypted plaintext and message IDs. The backend verifies conversation membership and message metadata, resolves sender IDs to display names/usernames, and builds a transcript prompt without database identifiers. Gemini thinking is disabled for this concise task so the configured output budget remains available for the visible answer. Responses that finish with `MAX_TOKENS` are rejected rather than cached as partial summaries; cache keys include the prompt version and sender labels.
+
 ## Forensic Flow
 
 1. The authenticated browser pages through persisted KYC-mode ciphertext and decrypts readable transcript entries locally.
