@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 export default function AuthScreen({ authenticate }) {
   const [mode, setMode] = useState('login')
-  const [form, setForm] = useState({ username: '', email: '', password: '' })
+  const [form, setForm] = useState({ username: '', email: '', identifier: '', password: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -11,7 +11,9 @@ export default function AuthScreen({ authenticate }) {
     setLoading(true)
     setError('')
     try {
-      const payload = mode === 'register' ? form : { email: form.email, password: form.password }
+      const payload = mode === 'register'
+        ? { username: form.username, email: form.email, password: form.password }
+        : { identifier: form.identifier, password: form.password }
       await authenticate(mode, payload)
     } catch (requestError) {
       setError(requestError.message)
@@ -69,10 +71,17 @@ export default function AuthScreen({ authenticate }) {
                   <input className="field mt-2" minLength={3} maxLength={64} required value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
                 </label>
               )}
-              <label className="block text-xs font-semibold text-slate-300">
-                Email
-                <input className="field mt-2" type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-              </label>
+              {mode === 'register' ? (
+                <label className="block text-xs font-semibold text-slate-300">
+                  Email
+                  <input className="field mt-2" type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+                </label>
+              ) : (
+                <label className="block text-xs font-semibold text-slate-300">
+                  Username hoặc email
+                  <input autoCapitalize="none" autoComplete="username" className="field mt-2" maxLength={254} placeholder="username hoặc name@gmail.com" required spellCheck={false} value={form.identifier} onChange={(event) => setForm({ ...form, identifier: event.target.value })} />
+                </label>
+              )}
               <label className="block text-xs font-semibold text-slate-300">
                 Mật khẩu
                 <input className="field mt-2" type="password" minLength={8} maxLength={72} required value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
