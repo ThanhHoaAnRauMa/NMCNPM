@@ -50,6 +50,25 @@ async function register(username, email) {
 }
 
 describe('integrated feature API', () => {
+  test('logs in with username, normalized email, and the legacy email field', async () => {
+    await register('aliceLogin', 'alice.login@example.com')
+
+    const byUsername = await request(app).post('/auth/login').send({ identifier: 'aliceLogin', password: 'correct-horse-42' })
+    assert.equal(byUsername.status, 200)
+    assert.equal(byUsername.body.user.username, 'aliceLogin')
+
+    const byEmail = await request(app).post('/auth/login').send({ identifier: '  ALICE.LOGIN@EXAMPLE.COM ', password: 'correct-horse-42' })
+    assert.equal(byEmail.status, 200)
+    assert.equal(byEmail.body.user.email, 'alice.login@example.com')
+
+    const legacyEmail = await request(app).post('/auth/login').send({ email: 'alice.login@example.com', password: 'correct-horse-42' })
+    assert.equal(legacyEmail.status, 200)
+
+    const wrongUsernameCase = await request(app).post('/auth/login').send({ identifier: 'alicelogin', password: 'correct-horse-42' })
+    assert.equal(wrongUsernameCase.status, 401)
+    assert.equal(wrongUsernameCase.body.code, 'INVALID_CREDENTIALS')
+  })
+
   test('protects private routes and supports auth refresh', async () => {
     const unauthorized = await request(app).get('/users/me')
     assert.equal(unauthorized.status, 401)

@@ -50,13 +50,18 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   try {
-    const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    const providedIdentifier = typeof req.body.identifier === "string" ? req.body.identifier.trim() : "";
+    const legacyEmail = typeof req.body.email === "string" ? req.body.email.trim() : "";
+    const identifier = providedIdentifier || legacyEmail;
     const password = typeof req.body.password === "string" ? req.body.password : "";
-    if (!email || !password) {
-      return res.status(400).json({ success: false, message: "Email and password are required.", code: "MISSING_FIELDS" });
+    if (!identifier || !password) {
+      return res.status(400).json({ success: false, message: "Username or email and password are required.", code: "MISSING_FIELDS" });
     }
 
-    const user = await User.findOne({ email }).select("+password");
+    const lookup = identifier.includes("@")
+      ? { email: identifier.toLowerCase() }
+      : { username: identifier };
+    const user = await User.findOne(lookup).select("+password");
     if (user?.isLocked()) {
       return res.status(423).json({ success: false, message: "Account is temporarily locked.", code: "ACCOUNT_LOCKED", lockUntil: user.lockUntil });
     }
@@ -71,7 +76,7 @@ exports.login = async (req, res) => {
           return res.status(423).json({ success: false, message: "Account is temporarily locked.", code: "ACCOUNT_LOCKED", lockUntil });
         }
       }
-      return res.status(401).json({ success: false, message: "Invalid email or password.", code: "INVALID_CREDENTIALS" });
+      return res.status(401).json({ success: false, message: "Invalid username, email or password.", code: "INVALID_CREDENTIALS" });
     }
 
     await User.findByIdAndUpdate(user._id, { loginAttempts: 0, lockUntil: null, isOnline: true });

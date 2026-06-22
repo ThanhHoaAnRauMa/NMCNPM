@@ -10,6 +10,7 @@ Added:
 * Production KYC reviewer allowlist and GitHub-to-Render deployment secrets.
 * Local/server device-key state detection and verified sender public-key snapshots for new messages.
 * Local full-history conversation search with sender, timestamp, substring highlighting, result counts, and jump-to-message navigation.
+* Login by either exact username or normalized email while retaining the legacy email request contract.
 
 Changed:
 
