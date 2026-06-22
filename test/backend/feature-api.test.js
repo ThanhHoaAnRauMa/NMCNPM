@@ -23,6 +23,7 @@ const User = require('../../src/backend/src/models/User.model.js')
 const KYCRecord = require('../../src/backend/src/models/KYCRecord.model.js')
 const cloudinaryUtils = require('../../src/backend/src/utils/cloudinary.utils.js')
 const signatureUtils = require('../../src/backend/src/utils/signature.utils.js')
+const bcrypt = require('bcryptjs')
 
 const app = express()
 const realtimeEvents = []
@@ -120,9 +121,20 @@ describe('integrated feature API', () => {
     const legacyEmail = await request(app).post('/auth/login').send({ email: 'alice.login@example.com', password: 'correct-horse-42' })
     assert.equal(legacyEmail.status, 200)
 
-    const wrongUsernameCase = await request(app).post('/auth/login').send({ identifier: 'alicelogin', password: 'correct-horse-42' })
-    assert.equal(wrongUsernameCase.status, 401)
-    assert.equal(wrongUsernameCase.body.code, 'INVALID_CREDENTIALS')
+    const normalizedUsername = await request(app).post('/auth/login').send({ identifier: 'alicelogin', password: 'correct-horse-42' })
+    assert.equal(normalizedUsername.status, 200)
+    assert.equal(normalizedUsername.body.user.username, 'aliceLogin')
+
+    const duplicateUsername = await request(app).post('/auth/register').send({
+      username: 'ALICELOGIN', email: 'another@example.com', password: 'correct-horse-42', confirmPassword: 'correct-horse-42',
+    })
+    assert.equal(duplicateUsername.status, 409)
+    assert.equal(duplicateUsername.body.code, 'USERNAME_ALREADY_EXISTS')
+
+    await User.create({ username: 'ALIceLogin', email: 'legacy-case@example.com', password: await bcrypt.hash('different-horse-42', 12) })
+    const legacyCollision = await request(app).post('/auth/login').send({ identifier: 'alicelogin', password: 'different-horse-42' })
+    assert.equal(legacyCollision.status, 200)
+    assert.equal(legacyCollision.body.user.username, 'ALIceLogin')
   })
 
   test('protects private routes and supports auth refresh', async () => {
