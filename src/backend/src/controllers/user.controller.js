@@ -123,6 +123,8 @@ exports.searchUsers = async (req, res) => {
 exports.startDirectConversation = async (req, res) => {
   try {
     const otherId = req.params.id;
+    const mode = req.body.mode === "PRIVACY" ? "PRIVACY" : "KYC";
+    const compatibleModes = mode === "PRIVACY" ? ["PRIVACY", "Privacy"] : ["KYC", "Standard"];
     if (!validId(otherId) || otherId === req.userId) {
       return res.status(400).json({ success: false, message: "Invalid conversation participant." });
     }
@@ -132,10 +134,13 @@ exports.startDirectConversation = async (req, res) => {
       return res.status(403).json({ success: false, message: "This user cannot be contacted." });
     }
 
-    let conversation = await Conversation.findOne({ type: { $in: ["DIRECT", "direct"] }, members: { $all: [req.userId, otherId], $size: 2 } });
+    let conversation = await Conversation.findOne({
+      type: { $in: ["DIRECT", "direct"] },
+      mode: { $in: compatibleModes },
+      members: { $all: [req.userId, otherId], $size: 2 },
+    });
     let isNew = false;
     if (!conversation) {
-      const mode = req.body.mode === "PRIVACY" ? "PRIVACY" : "KYC";
       conversation = await Conversation.create({ type: "DIRECT", mode, members: [req.userId, otherId] });
       isNew = true;
     }

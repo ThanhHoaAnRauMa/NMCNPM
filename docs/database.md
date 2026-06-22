@@ -62,6 +62,7 @@ Indexes:
 | --- | --- |
 | `{ members: 1, updatedAt: -1 }` | Membership and recent ordering |
 | `{ type: 1, members: 1 }` | Direct/group membership lookup |
+| `{ type: 1, mode: 1, members: 1 }` | Mode-specific direct conversation lookup |
 
 ## Message
 

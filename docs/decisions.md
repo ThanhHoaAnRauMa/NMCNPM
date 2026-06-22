@@ -134,6 +134,17 @@ This file records decisions that can be inferred from the current implementation
 | Decision | Generate device keys with Web Crypto, store private JWKs in IndexedDB, publish only a versioned public bundle, and encrypt/sign before REST or Socket.IO transport. |
 | Consequences | Clearing browser data loses local decryption ability; key backup/rotation and multi-device transfer are not implemented. |
 
+## Direct Conversations Are Mode-Specific
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | KYC conversations persist ciphertext while Privacy conversations are ephemeral, so one direct conversation cannot safely represent both behaviors. |
+| Rationale | Treating only the participant pair as identity caused a request for one mode to return an existing conversation of the other mode. |
+| Alternatives Considered | Mutate the existing conversation mode; allow only one mode per user pair. Both would either change prior conversation semantics or prevent the advertised mode choice. |
+| Decision | Resolve a direct conversation by exact participant pair and compatible mode, allowing one KYC and one Privacy conversation for the same pair. |
+| Consequences | The sidebar may list the same participant twice with different mode badges; legacy `Standard` and `Privacy` records remain discoverable. |
+
 ## KYC Submission Is Pending
 
 | Field | Decision |
