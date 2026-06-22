@@ -11,6 +11,7 @@ import { moderatePlaintext } from '../services/aiModeration.js'
 const MAX_SUMMARY_MESSAGES = Number(process.env.AI_MAX_SUMMARY_MESSAGES) || 100
 const MAX_MESSAGE_TEXT_LENGTH = Number(process.env.AI_MAX_MESSAGE_CHARS) || 4000
 const MAX_TOTAL_TEXT_LENGTH = Number(process.env.AI_MAX_TOTAL_CHARS) || 20000
+const SUMMARY_PROMPT_VERSION = 2
 
 function requestError(message, status = 400) {
   const error = new Error(message)
@@ -96,17 +97,30 @@ function buildCacheKey({ conversationId, messageIds, messages, model }) {
     .createHash('sha256')
     .update(
       JSON.stringify({
-        version: 1,
+        version: SUMMARY_PROMPT_VERSION,
         conversationId: conversationId.toString(),
         model,
         messageIds,
         messages: messages.map((message) => ({
           messageId: message.messageId,
           text: message.text,
+          senderLabel: message.senderLabel,
         })),
       })
     )
     .digest('hex')
+}
+
+async function fetchSenderLabels(senderIds) {
+  const uniqueIds = [...new Set(senderIds.filter(Boolean))]
+  if (!uniqueIds.length || mongoose.connection.readyState !== 1) return new Map()
+  const users = await mongoose.connection.collection('users').find({
+    _id: { $in: uniqueIds.map((senderId) => toObjectId(senderId, 'senderId')) },
+  }, { projection: { username: 1, displayName: 1 } }).toArray()
+  return new Map(users.map((user) => [
+    user._id.toString(),
+    (typeof user.displayName === 'string' && user.displayName.trim()) || user.username || 'Người tham gia',
+  ]))
 }
 
 async function assertConversationMembership(req, conversationId) {
@@ -139,6 +153,7 @@ export function createAiRouter({
   SummaryCacheModel = AISummaryCache,
   generateText = generateGeminiText,
   moderate = moderatePlaintext,
+  resolveSenderLabels = fetchSenderLabels,
   now = () => new Date(),
   model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
 } = {}) {
@@ -153,11 +168,17 @@ export function createAiRouter({
         conversationId: payload.conversationId,
         messageObjectIds: payload.messageObjectIds,
       })
+      const senderIds = [...messageMetadata.values()].map((metadata) => metadata.senderId?.toString()).filter(Boolean)
+      const senderLabels = await resolveSenderLabels(senderIds)
+      const fallbackLabels = new Map()
       const messagesForPrompt = payload.messages.map((message) => {
         const metadata = messageMetadata.get(message.messageId)
+        const senderId = metadata?.senderId?.toString() || message.senderId
+        if (senderId && !fallbackLabels.has(senderId)) fallbackLabels.set(senderId, `Người tham gia ${fallbackLabels.size + 1}`)
         return {
           ...message,
-          senderId: metadata?.senderId?.toString() || message.senderId,
+          senderId,
+          senderLabel: senderLabels.get(senderId) || fallbackLabels.get(senderId) || 'Người tham gia',
           timestamp: metadata?.timestamp?.toISOString?.() || message.timestamp,
         }
       })
@@ -189,7 +210,6 @@ export function createAiRouter({
       }
 
       const prompt = buildSummaryPrompt({
-        conversationId: payload.conversationId.toString(),
         messages: messagesForPrompt,
       })
       const summary = await generateText(prompt, { model })
