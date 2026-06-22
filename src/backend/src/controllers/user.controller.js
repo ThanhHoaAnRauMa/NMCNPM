@@ -143,6 +143,12 @@ exports.startDirectConversation = async (req, res) => {
     if (!conversation) {
       conversation = await Conversation.create({ type: "DIRECT", mode, members: [req.userId, otherId] });
       isNew = true;
+      req.app.get("io")?.to(`user:${otherId}`).emit("conversation_created", {
+        conversationId: conversation._id,
+        type: conversation.type,
+        mode: conversation.mode,
+        createdBy: req.userId,
+      });
     }
     const publicOtherUser = otherUser.toObject();
     delete publicOtherUser.blocklist;

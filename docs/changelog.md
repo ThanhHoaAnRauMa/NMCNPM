@@ -4,6 +4,8 @@
 
 Added:
 
+* Realtime `conversation_created` notifications for invited direct and group members, with reconnect list recovery.
+* Required password confirmation in the registration UI and API.
 * Render production API and static frontend deployment records.
 * Production Cloudinary configuration for encrypted attachment storage.
 * Sepolia deployment of the `ForensisChat` implementation and ERC1967 proxy, with committed Foundry broadcast records.

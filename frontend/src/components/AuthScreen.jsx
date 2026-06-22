@@ -2,17 +2,21 @@ import { useState } from 'react'
 
 export default function AuthScreen({ authenticate }) {
   const [mode, setMode] = useState('login')
-  const [form, setForm] = useState({ username: '', email: '', identifier: '', password: '' })
+  const [form, setForm] = useState({ username: '', email: '', identifier: '', password: '', confirmPassword: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   const submit = async (event) => {
     event.preventDefault()
-    setLoading(true)
     setError('')
+    if (mode === 'register' && form.password !== form.confirmPassword) {
+      setError('Mật khẩu xác nhận không khớp.')
+      return
+    }
+    setLoading(true)
     try {
       const payload = mode === 'register'
-        ? { username: form.username, email: form.email, password: form.password }
+        ? { username: form.username, email: form.email, password: form.password, confirmPassword: form.confirmPassword }
         : { identifier: form.identifier, password: form.password }
       await authenticate(mode, payload)
     } catch (requestError) {
@@ -84,8 +88,14 @@ export default function AuthScreen({ authenticate }) {
               )}
               <label className="block text-xs font-semibold text-slate-300">
                 Mật khẩu
-                <input className="field mt-2" type="password" minLength={8} maxLength={72} required value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+                <input autoComplete={mode === 'register' ? 'new-password' : 'current-password'} className="field mt-2" type="password" minLength={8} maxLength={72} required value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
               </label>
+              {mode === 'register' && (
+                <label className="block text-xs font-semibold text-slate-300">
+                  Xác nhận mật khẩu
+                  <input autoComplete="new-password" className="field mt-2" type="password" minLength={8} maxLength={72} required value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
+                </label>
+              )}
               {error && <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
               <button className="btn-primary mt-2 w-full" disabled={loading} type="submit">
                 {loading ? 'Đang xử lý...' : mode === 'login' ? 'Đăng nhập' : 'Đăng ký và tiếp tục'}

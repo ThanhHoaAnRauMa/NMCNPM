@@ -22,12 +22,16 @@ exports.register = async (req, res) => {
     const username = typeof req.body.username === "string" ? req.body.username.trim() : "";
     const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
     const password = typeof req.body.password === "string" ? req.body.password : "";
+    const confirmPassword = typeof req.body.confirmPassword === "string" ? req.body.confirmPassword : "";
 
-    if (!username || !email || !password) {
-      return res.status(400).json({ success: false, message: "Username, email and password are required.", code: "MISSING_FIELDS" });
+    if (!username || !email || !password || !confirmPassword) {
+      return res.status(400).json({ success: false, message: "Username, email, password and password confirmation are required.", code: "MISSING_FIELDS" });
     }
     if (password.length < PASSWORD_MIN_LENGTH || password.length > 72) {
       return res.status(400).json({ success: false, message: "Password must contain 8 to 72 characters.", code: "INVALID_PASSWORD_LENGTH" });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "Password confirmation does not match.", code: "PASSWORD_MISMATCH" });
     }
 
     const existing = await User.findOne({ $or: [{ email }, { username }] }).select("email username");
