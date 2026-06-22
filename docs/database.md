@@ -169,6 +169,9 @@ Indexes:
 | `docHash` | String | Yes | SHA-256 hex submitted by client |
 | `signature` | String | Yes | Signature metadata |
 | `pubkey` | String | Yes | Public-key snapshot |
+| `fullName`, `citizenId`, `dateOfBirth`, `address` | Mixed | New submissions | Reviewer-visible identity fields; legacy records may be null |
+| `documentFrontPublicId`, `documentBackPublicId` | String | New submissions | Authenticated Cloudinary asset identifiers; never returned to ordinary users |
+| `documentFrontFormat`, `documentBackFormat` | String | New submissions | Signed-delivery format metadata |
 | `status` | String enum | No | `PENDING`, `VERIFIED`, `REJECTED`; submission creates `PENDING` only |
 | `verifiedAt` | Date | No | Verification timestamp |
 | `reviewedAt` | Date | No | Reviewer decision timestamp |
@@ -182,6 +185,9 @@ Indexes:
 | --- | --- |
 | `{ userId: 1 }` unique | One active submission per user |
 | `{ status: 1, createdAt: 1, _id: 1 }` | Ordered reviewer queue |
+| `{ citizenId: 1 }` unique partial | Prevent one submitted CCCD number from backing multiple accounts |
+
+CCCD images are not stored in MongoDB. New submissions bind the identity fields and both image hashes into `docHash`; private Cloudinary asset IDs are exposed only through allowlisted review responses as signed URLs. Rejection removes the Cloudinary images and clears their IDs while retaining audit/hash metadata. Legacy hash-only records remain readable but cannot be approved through the current UI without images.
 
 ## Query Helpers
 

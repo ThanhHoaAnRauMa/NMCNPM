@@ -176,7 +176,18 @@ This file records decisions that can be inferred from the current implementation
 | Rationale | A deployment-controlled ObjectId allowlist adds least-privilege review without allowing clients to assign themselves an admin role. |
 | Alternatives Considered | Add a client-writable role field; auto-verify signed hashes. Both allow privilege or trust escalation. |
 | Decision | Protect queue/decision routes with `KYC_REVIEWER_USER_IDS`, prohibit self-review, retain audit metadata, and allow replacement after rejection. |
-| Consequences | Operators must configure reviewer IDs, and reviewers still need an out-of-band document validation process. |
+| Consequences | Operators must configure reviewer IDs; manual review now uses submitted CCCD images, but authoritative government/OCR/liveness validation remains external. |
+
+## Document-Backed KYC Gates KYC Mode
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | A signed arbitrary text hash proves device submission integrity but cannot establish that a CCCD exists or matches the claimed identity. |
+| Rationale | Manual reviewers need the claimed fields and source document while ordinary registration and Privacy chat should remain available without identity disclosure. |
+| Alternatives Considered | Move hash-only KYC into registration; require KYC for Privacy; auto-verify signatures. These either force unnecessary identity collection or confuse device authenticity with identity verification. |
+| Decision | Keep KYC optional after registration, bind fields plus both image hashes into the device-signed proof, store images as authenticated Cloudinary assets, and require `VERIFIED` status only for KYC-mode membership. |
+| Consequences | The system handles sensitive identity data and requires strict reviewer allowlisting/retention controls. It is manual verification, not authoritative eKYC. |
 
 ## Password-Encrypted Device-Key Backup
 

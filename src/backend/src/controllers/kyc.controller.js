@@ -1,14 +1,55 @@
 const KYCRecord = require("../models/KYCRecord.model");
 const User = require("../models/User.model");
+const crypto = require("crypto");
+const cloudinaryUtils = require("../utils/cloudinary.utils");
+const signatureUtils = require("../utils/signature.utils");
+
+const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+function sha256(buffer) {
+  return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+function validImageBytes(file) {
+  const hex = file.buffer.subarray(0, 12).toString("hex");
+  if (file.mimetype === "image/jpeg") return hex.startsWith("ffd8ff");
+  if (file.mimetype === "image/png") return hex.startsWith("89504e470d0a1a0a");
+  if (file.mimetype === "image/webp") return file.buffer.subarray(0, 4).toString() === "RIFF" && file.buffer.subarray(8, 12).toString() === "WEBP";
+  return false;
+}
+
+function canonicalKycPayload({ fullName, citizenId, dateOfBirth, address, frontHash, backHash }) {
+  return JSON.stringify({ fullName, citizenId, dateOfBirth, address, frontHash, backHash });
+}
 
 exports.submitKYC = async (req, res) => {
   try {
     const { hash, signature, pubkey } = req.body;
+    const fullName = typeof req.body.fullName === "string" ? req.body.fullName.trim() : "";
+    const citizenId = typeof req.body.citizenId === "string" ? req.body.citizenId.trim() : "";
+    const dateOfBirth = typeof req.body.dateOfBirth === "string" ? req.body.dateOfBirth : "";
+    const address = typeof req.body.address === "string" ? req.body.address.trim() : "";
+    const parsedDateOfBirth = new Date(`${dateOfBirth}T00:00:00.000Z`);
+    const front = req.files?.documentFront?.[0];
+    const back = req.files?.documentBack?.[0];
     if (!/^[a-f0-9]{64}$/i.test(hash || "") || typeof signature !== "string" || !signature || typeof pubkey !== "string" || !pubkey) {
       return res.status(400).json({ success: false, message: "A SHA-256 hash, signature and public key are required." });
     }
+    if (fullName.length < 2 || fullName.length > 120 || !/^\d{12}$/.test(citizenId) || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) || Number.isNaN(parsedDateOfBirth.getTime()) || parsedDateOfBirth.toISOString().slice(0, 10) !== dateOfBirth || parsedDateOfBirth > new Date() || address.length < 5 || address.length > 500) {
+      return res.status(400).json({ success: false, message: "Valid CCCD name, 12-digit number, date of birth and address are required." });
+    }
+    if (!front || !back || !IMAGE_TYPES.has(front.mimetype) || !IMAGE_TYPES.has(back.mimetype) || !validImageBytes(front) || !validImageBytes(back)) {
+      return res.status(400).json({ success: false, message: "JPEG, PNG or WebP images of both CCCD sides are required." });
+    }
     if (signature.length > 16384 || pubkey.length > 16384) {
       return res.status(400).json({ success: false, message: "KYC proof is too large." });
+    }
+
+    const payload = canonicalKycPayload({ fullName, citizenId, dateOfBirth, address, frontHash: sha256(front.buffer), backHash: sha256(back.buffer) });
+    const calculatedHash = crypto.createHash("sha256").update(payload).digest("hex");
+    const user = await User.findById(req.userId).select("publicKey");
+    if (calculatedHash !== hash.toLowerCase() || !user?.publicKey || user.publicKey !== pubkey || !await signatureUtils.verifyEnvelopeSignature(hash.toLowerCase(), signature, pubkey)) {
+      return res.status(409).json({ success: false, code: "INVALID_KYC_PROOF", message: "KYC data, images or device signature could not be verified." });
     }
 
     const existing = await KYCRecord.findOne({ userId: req.userId });
@@ -16,12 +57,30 @@ exports.submitKYC = async (req, res) => {
       return res.status(409).json({ success: false, message: "A KYC submission already exists.", status: existing.status });
     }
 
+    let uploadedFront;
+    let uploadedBack;
+    try {
+      uploadedFront = await cloudinaryUtils.uploadToCloudinary(front.buffer, front.mimetype, "securechat/kyc", { type: "authenticated" });
+      uploadedBack = await cloudinaryUtils.uploadToCloudinary(back.buffer, back.mimetype, "securechat/kyc", { type: "authenticated" });
+    } catch (uploadError) {
+      if (uploadedFront?.publicId) await cloudinaryUtils.deleteFromCloudinary(uploadedFront.publicId, "image", "authenticated");
+      throw uploadError;
+    }
+    const oldDocuments = existing ? [existing.documentFrontPublicId, existing.documentBackPublicId].filter(Boolean) : [];
     const record = existing || new KYCRecord({ userId: req.userId });
     Object.assign(record, {
-      docHash: hash.toLowerCase(), signature, pubkey, status: "PENDING",
-      verifiedAt: null, reviewedAt: null, reviewedBy: null, rejectionReason: null,
+      docHash: hash.toLowerCase(), signature, pubkey, fullName, citizenId, dateOfBirth: parsedDateOfBirth, address,
+      documentFrontPublicId: uploadedFront.publicId, documentFrontFormat: uploadedFront.format,
+      documentBackPublicId: uploadedBack.publicId, documentBackFormat: uploadedBack.format,
+      status: "PENDING", verifiedAt: null, reviewedAt: null, reviewedBy: null, rejectionReason: null,
     });
-    await record.save();
+    try {
+      await record.save();
+    } catch (saveError) {
+      await Promise.all([uploadedFront, uploadedBack].map((item) => cloudinaryUtils.deleteFromCloudinary(item.publicId, "image", "authenticated")));
+      throw saveError;
+    }
+    await Promise.all(oldDocuments.map((publicId) => cloudinaryUtils.deleteFromCloudinary(publicId, "image", "authenticated")));
     await User.findByIdAndUpdate(req.userId, { kycStatus: "PENDING" });
     return res.status(201).json({
       success: true,
@@ -47,7 +106,16 @@ exports.listKYCReviews = async (req, res) => {
       .limit(limit)
       .populate("userId", "username email displayName kycStatus publicKey")
       .lean();
-    return res.json({ success: true, records });
+    const reviewRecords = records.map((record) => ({
+      ...record,
+      documents: record.documentFrontPublicId && record.documentBackPublicId ? {
+        frontUrl: cloudinaryUtils.signedAuthenticatedImageUrl(record.documentFrontPublicId, record.documentFrontFormat),
+        backUrl: cloudinaryUtils.signedAuthenticatedImageUrl(record.documentBackPublicId, record.documentBackFormat),
+      } : null,
+      documentFrontPublicId: undefined,
+      documentBackPublicId: undefined,
+    }));
+    return res.json({ success: true, records: reviewRecords });
   } catch (error) {
     console.error("[listKYCReviews]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
@@ -97,6 +165,15 @@ exports.reviewKYC = async (req, res) => {
         rejectionReason: previous.rejectionReason,
       });
       throw error;
+    }
+
+    if (status === "REJECTED") {
+      const rejectedDocuments = [record.documentFrontPublicId, record.documentBackPublicId].filter(Boolean);
+      await KYCRecord.updateOne({ _id: record._id }, {
+        documentFrontPublicId: null, documentFrontFormat: null,
+        documentBackPublicId: null, documentBackFormat: null,
+      });
+      await Promise.all(rejectedDocuments.map((publicId) => cloudinaryUtils.deleteFromCloudinary(publicId, "image", "authenticated")));
     }
 
     return res.json({

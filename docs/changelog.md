@@ -4,6 +4,7 @@
 
 Added:
 
+* Document-backed manual KYC with basic CCCD fields, front/back authenticated image upload, signed image-integrity proof, and reviewer UI.
 * Realtime `conversation_created` notifications for invited direct and group members, with reconnect list recovery.
 * Required password confirmation in the registration UI and API.
 * Render production API and static frontend deployment records.
@@ -16,6 +17,7 @@ Added:
 
 Changed:
 
+* KYC-mode direct/group membership now requires every participant to be `VERIFIED`; registration and Privacy mode remain available without KYC.
 * Increased Gemini moderation timeout from 2 seconds to a production-tolerant 5-second default with a 10-second configuration cap.
 * Updated deployment and project context documentation to reflect the live Render, Atlas, and Gemini configuration.
 * Configured the production frontend to use the deployed Sepolia proxy address.

@@ -67,6 +67,14 @@ The browser explicitly submits locally decrypted plaintext and message IDs. The 
 
 Transcript plaintext in an exported package is for authorized human review; its integrity is tied indirectly to the included decryptable ciphertext. The package itself must be handled as sensitive evidence.
 
+## KYC Flow
+
+1. Registration remains available without KYC.
+2. The browser hashes both CCCD images, combines those hashes with normalized identity fields, hashes the canonical payload, and signs it with the current device key.
+3. The backend recomputes the payload/hash, verifies the account public key/signature, and uploads both images as authenticated Cloudinary assets.
+4. An allowlisted reviewer receives identity fields plus signed image URLs and records `VERIFIED` or `REJECTED` with audit metadata.
+5. KYC direct/group creation and KYC group membership require every participant to be verified. Privacy mode does not require KYC.
+
 ## HTTP Boundaries
 
 | Prefix | Module | Authentication |
@@ -94,6 +102,7 @@ Socket authentication occurs during the handshake with `auth.token`. Each connec
 | AI source plaintext | Request memory only |
 | AI summary | MongoDB TTL cache, 1h |
 | Encrypted attachment blob | Cloudinary |
+| Authenticated CCCD images | Cloudinary; signed reviewer delivery only |
 | Merkle confirmed roots | Solidity contract |
 
 ## Known Architecture Gaps

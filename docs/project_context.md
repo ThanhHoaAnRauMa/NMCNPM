@@ -50,7 +50,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Conversation message search | Full persisted history is decrypted and substring-searched locally; sender/time/jump results implemented |
 | Gemini moderation before encryption | Implemented with allow-on-provider-failure policy |
 | Gemini conversation summary | Explicit client-supplied plaintext, human sender labels, versioned cache, and truncated-response rejection implemented |
-| KYC proof review | Submit, allowlisted review/reject, audit metadata, and rejected resubmission implemented |
+| Manual KYC review | Signed CCCD fields/images, private upload, allowlisted review, resubmission, and KYC-mode enforcement implemented |
 | Device-key recovery | Password-encrypted local export/import implemented; no server key custody |
 | Forensic evidence | Local transcript package, Merkle proof/signature verification, room/root wallet actions implemented |
 
@@ -70,7 +70,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 
 | Area | Gap |
 | --- | --- |
-| KYC | External identity/document provider is not integrated; reviewer IDs require operator configuration |
+| KYC | Manual document review exists; OCR, liveness, government lookup, and external eKYC provider are not integrated |
 | Forensics | No unattended periodic root worker; wallet approval is required to avoid a server custody key |
 | Multi-device crypto | Local/server mismatch detection and encrypted manual recovery exist; no automatic trusted-device transfer, and legacy messages have no key snapshots |
 | Privacy mode | Ephemeral delivery has no offline recovery by design |

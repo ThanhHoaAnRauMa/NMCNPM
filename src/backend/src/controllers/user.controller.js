@@ -133,6 +133,12 @@ exports.startDirectConversation = async (req, res) => {
     if (otherUser.blocklist.some((id) => id.toString() === req.userId)) {
       return res.status(403).json({ success: false, message: "This user cannot be contacted." });
     }
+    if (mode === "KYC") {
+      const requester = await User.findById(req.userId).select("kycStatus").lean();
+      if (String(requester?.kycStatus).toUpperCase() !== "VERIFIED" || String(otherUser.kycStatus).toUpperCase() !== "VERIFIED") {
+        return res.status(403).json({ success: false, code: "KYC_REQUIRED", message: "Both participants must be KYC verified for KYC mode." });
+      }
+    }
 
     let conversation = await Conversation.findOne({
       type: { $in: ["DIRECT", "direct"] },
