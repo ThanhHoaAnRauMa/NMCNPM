@@ -8,7 +8,7 @@
 | Database | MongoDB 8 local or MongoDB Atlas |
 | Containers | Docker + Compose |
 | Contracts | Foundry for build/test/deploy |
-| External services | Gemini for AI; Cloudinary for encrypted attachments |
+| External services | Gemini for AI; Cloudinary for encrypted attachments and authenticated KYC document images |
 
 ## Local Development
 

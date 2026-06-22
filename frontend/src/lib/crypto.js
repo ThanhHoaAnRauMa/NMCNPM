@@ -148,3 +148,16 @@ export async function createKycProof(statement, identity) {
   const hash = await crypto.subtle.digest('SHA-256', encoder.encode(statement))
   return { hash: bytesToHex(hash), signature: await signPayload(bytesToHex(hash), identity) }
 }
+
+export async function createKycDocumentProof(details, documentFront, documentBack, identity) {
+  const fileHash = async (file) => bytesToHex(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()))
+  const payload = JSON.stringify({
+    fullName: details.fullName.trim(),
+    citizenId: details.citizenId.trim(),
+    dateOfBirth: details.dateOfBirth,
+    address: details.address.trim(),
+    frontHash: await fileHash(documentFront),
+    backHash: await fileHash(documentBack),
+  })
+  return createKycProof(payload, identity)
+}

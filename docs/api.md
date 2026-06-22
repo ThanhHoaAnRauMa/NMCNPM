@@ -54,7 +54,7 @@ Registration compatibility note: clients must send `confirmPassword` after this 
 | GET | `/users/:id/pubkey` | None | Read a member public-key bundle |
 | POST | `/users/:id/block` | None | Block user |
 | POST | `/users/:id/unblock` | None | Unblock user |
-| POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find or create one direct conversation per participant pair and mode |
+| POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find/create by pair and mode; KYC requires both users `VERIFIED` |
 | GET | `/chat/conversations` | None | List member conversations with members and last message |
 | GET | `/chat/:conversationId/messages?before=&limit=&includeHidden=` | Limit 1-100 | Cursor history; membership required; `includeHidden=true` restores sender-hidden records for evidence export |
 | DELETE | `/chat/messages/:messageId` | None | Sender-only local-hide flag; does not delete forensic record |
@@ -63,11 +63,11 @@ Registration compatibility note: clients must send `confirmPassword` after this 
 
 | Method | Path | Body | Purpose |
 | --- | --- | --- | --- |
-| POST | `/groups` | `{ name, memberIds, mode? }` | Create group; creator becomes admin |
+| POST | `/groups` | `{ name, memberIds, mode? }` | Create group; every KYC-mode member must be `VERIFIED` |
 | GET | `/groups` | None | List current user's groups |
 | GET | `/groups/all` | None | Compatibility conversation list with display metadata |
 | PATCH | `/groups/:id` | `{ name?, avatarUrl? }` | Admin updates group metadata |
-| POST | `/groups/:id/members` | `{ userId }` | Admin adds member |
+| POST | `/groups/:id/members` | `{ userId }` | Admin adds member; KYC groups accept only `VERIFIED` users |
 | DELETE | `/groups/:id/members/:userId` | None | Admin removes member or member leaves |
 | POST | `/groups/:id/admins` | `{ userId }` | Promote existing member |
 
@@ -97,13 +97,15 @@ The upload signature must match the sender's current account public key. A stale
 
 | Method | Path | Body / Result |
 | --- | --- | --- |
-| POST | `/kyc/submit` | `{ hash, signature, pubkey }`; creates `PENDING`, never auto-verifies |
+| POST | `/kyc/submit` | `multipart/form-data`; creates `PENDING`, never auto-verifies |
 | GET | `/kyc/status` | Current user's status |
 | GET | `/kyc/status/:userId` | Authenticated status lookup |
 | GET | `/kyc/reviews?status=&limit=` | Reviewer allowlist | Review queue; status defaults to `PENDING`, limit max 100 |
 | PATCH | `/kyc/reviews/:recordId` | Reviewer allowlist | `{ status: "VERIFIED" | "REJECTED", rejectionReason? }` |
 
-Reviewer access is controlled by `KYC_REVIEWER_USER_IDS`. Reviewers cannot decide their own submission. A rejected user may submit a replacement proof; external document-provider verification remains **Not Implemented**.
+Submission fields are `fullName`, `citizenId` (12 digits), `dateOfBirth`, `address`, `documentFront`, `documentBack`, `hash`, `signature`, and `pubkey`. Images must be JPEG, PNG, or WebP. The client signs a canonical payload containing the identity fields and SHA-256 of both images; the backend recomputes it and verifies the current device key before private upload.
+
+Reviewer access is controlled by `KYC_REVIEWER_USER_IDS`. The queue returns signed delivery URLs for authenticated Cloudinary images. Reviewers cannot decide their own submission. Rejection deletes both images while retaining hash/audit metadata; the user may then submit replacements. External OCR/eKYC validation remains **Not Implemented**. `403 KYC_REQUIRED` means one or more participants are not verified for KYC-mode conversation creation/membership.
 
 ## Temporary Message Search
 

@@ -22,6 +22,9 @@ exports.createGroup = async (req, res) => {
       return res.status(400).json({ success: false, message: "One or more members do not exist." });
     }
     const mode = req.body.mode === "PRIVACY" ? "PRIVACY" : "KYC";
+    if (mode === "KYC" && (await User.countDocuments({ _id: { $in: members }, kycStatus: { $in: ["VERIFIED", "verified"] } })) !== members.length) {
+      return res.status(403).json({ success: false, code: "KYC_REQUIRED", message: "Every group member must be KYC verified for KYC mode." });
+    }
     const group = await Conversation.create({ type: "GROUP", mode, members, groupName: name, createdBy: req.userId, admins: [req.userId] });
     const io = req.app.get("io");
     for (const memberId of members) {
@@ -131,6 +134,9 @@ exports.addMember = async (req, res) => {
     if (!group || !isAdmin(group, req.userId)) return res.status(403).json({ success: false, message: "Group admin access required." });
     if (!validId(req.body.userId) || !(await User.exists({ _id: req.body.userId }))) {
       return res.status(400).json({ success: false, message: "Valid userId is required." });
+    }
+    if (["KYC", "Standard"].includes(group.mode) && !(await User.exists({ _id: req.body.userId, kycStatus: { $in: ["VERIFIED", "verified"] } }))) {
+      return res.status(403).json({ success: false, code: "KYC_REQUIRED", message: "New members of a KYC group must be KYC verified." });
     }
     await Conversation.findByIdAndUpdate(group._id, { $addToSet: { members: req.body.userId } });
     return res.json({ success: true, message: "Member added." });

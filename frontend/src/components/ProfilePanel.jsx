@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { createKycProof } from '../lib/crypto.js'
+import { createKycDocumentProof } from '../lib/crypto.js'
 import { createIdentityBackup, restoreIdentityBackup } from '../lib/keyBackup.js'
 
 export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentity, onProfileChanged, onRestoreIdentity, onSynchronizeIdentity, userId }) {
   const [profile, setProfile] = useState(null)
   const [form, setForm] = useState({ displayName: '', avatarUrl: '' })
-  const [statement, setStatement] = useState('')
+  const [kycForm, setKycForm] = useState({ fullName: '', citizenId: '', dateOfBirth: '', address: '' })
+  const [kycFiles, setKycFiles] = useState({ front: null, back: null })
+  const [reviewRecords, setReviewRecords] = useState(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [backupPassword, setBackupPassword] = useState('')
@@ -17,6 +19,9 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
       setProfile(user)
       setForm({ displayName: user.displayName || '', avatarUrl: user.avatarUrl || '' })
     }).catch((requestError) => setError(requestError.message))
+    api.get('/kyc/reviews').then(({ records }) => setReviewRecords(records)).catch((requestError) => {
+      if (requestError.status !== 403) setError(requestError.message)
+    })
   }, [api])
 
   const save = async (event) => {
@@ -35,13 +40,30 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
   const submitKyc = async () => {
     setError('')
     if (!keyReady) return setError('Khóa thiết bị phải khớp tài khoản trước khi gửi KYC.')
-    if (statement.trim().length < 10) return setError('Nội dung xác minh phải có ít nhất 10 ký tự.')
+    if (kycForm.fullName.trim().length < 2 || !/^\d{12}$/.test(kycForm.citizenId) || !kycForm.dateOfBirth || kycForm.address.trim().length < 5) return setError('Vui lòng nhập đầy đủ thông tin CCCD hợp lệ.')
+    if (!kycFiles.front || !kycFiles.back) return setError('Cần ảnh mặt trước và mặt sau CCCD.')
     try {
-      const proof = await createKycProof(statement.trim(), identity)
-      const payload = await api.post('/kyc/submit', { ...proof, pubkey: identity.publicBundle })
+      const proof = await createKycDocumentProof(kycForm, kycFiles.front, kycFiles.back, identity)
+      const formData = new FormData()
+      Object.entries({ ...kycForm, ...proof, pubkey: identity.publicBundle }).forEach(([key, value]) => formData.append(key, value))
+      formData.append('documentFront', kycFiles.front)
+      formData.append('documentBack', kycFiles.back)
+      const payload = await api.upload('/kyc/submit', formData)
       setProfile((current) => ({ ...current, kycStatus: payload.kycRecord.status }))
-      setNotice('Bằng chứng KYC đã gửi và đang chờ duyệt.')
-      setStatement('')
+      setNotice('Hồ sơ KYC đã gửi và đang chờ reviewer đối chiếu.')
+      setKycFiles({ front: null, back: null })
+    } catch (requestError) {
+      setError(requestError.message)
+    }
+  }
+
+  const reviewKyc = async (recordId, status) => {
+    const rejectionReason = status === 'REJECTED' ? window.prompt('Lý do từ chối (ít nhất 5 ký tự):') : ''
+    if (status === 'REJECTED' && (!rejectionReason || rejectionReason.trim().length < 5)) return
+    try {
+      await api.patch(`/kyc/reviews/${recordId}`, { status, rejectionReason })
+      setReviewRecords((records) => records.filter((record) => record._id !== recordId))
+      setNotice(`Đã cập nhật hồ sơ thành ${status}.`)
     } catch (requestError) {
       setError(requestError.message)
     }
@@ -146,10 +168,26 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
               <div><p className="eyebrow">KYC proof</p><h3 className="mt-2 text-xl font-bold">Bằng chứng xác minh</h3></div>
               <span className="rounded-full border border-line px-3 py-1 text-xs font-bold text-amber">{profile?.kycStatus || 'NONE'}</span>
             </div>
-            <p className="mt-4 text-sm leading-6 text-slate-400">Bản hiện tại chỉ nhận hash và chữ ký để đưa vào hàng chờ. Backend không tự xác nhận VERIFIED; cần quy trình reviewer riêng.</p>
-            <textarea className="field mt-5 min-h-28 resize-y" placeholder="Nhập thông tin hoặc mã tham chiếu tài liệu cần ký..." value={statement} onChange={(event) => setStatement(event.target.value)} />
-            <button className="btn-primary mt-4" disabled={!keyReady || ['PENDING', 'VERIFIED'].includes(profile?.kycStatus)} onClick={submitKyc}>Hash, ký và gửi xét duyệt</button>
+            <p className="mt-4 text-sm leading-6 text-slate-400">KYC là tùy chọn sau đăng ký. Reviewer được cấp quyền sẽ đối chiếu thông tin và hai ảnh CCCD lưu private trên Cloudinary. Chỉ tài khoản VERIFIED mới dùng KYC mode.</p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs font-semibold text-slate-300">Họ và tên<input className="field mt-2" maxLength={120} required value={kycForm.fullName} onChange={(event) => setKycForm({ ...kycForm, fullName: event.target.value })} /></label>
+              <label className="text-xs font-semibold text-slate-300">Số CCCD<input className="field mt-2" inputMode="numeric" maxLength={12} minLength={12} pattern="[0-9]{12}" required value={kycForm.citizenId} onChange={(event) => setKycForm({ ...kycForm, citizenId: event.target.value.replace(/\D/g, '') })} /></label>
+              <label className="text-xs font-semibold text-slate-300">Ngày sinh<input className="field mt-2" type="date" required value={kycForm.dateOfBirth} onChange={(event) => setKycForm({ ...kycForm, dateOfBirth: event.target.value })} /></label>
+              <label className="text-xs font-semibold text-slate-300">Địa chỉ<input className="field mt-2" maxLength={500} required value={kycForm.address} onChange={(event) => setKycForm({ ...kycForm, address: event.target.value })} /></label>
+              <label className="text-xs font-semibold text-slate-300">Ảnh mặt trước<input accept="image/jpeg,image/png,image/webp" className="field mt-2" type="file" onChange={(event) => setKycFiles({ ...kycFiles, front: event.target.files?.[0] || null })} /></label>
+              <label className="text-xs font-semibold text-slate-300">Ảnh mặt sau<input accept="image/jpeg,image/png,image/webp" className="field mt-2" type="file" onChange={(event) => setKycFiles({ ...kycFiles, back: event.target.files?.[0] || null })} /></label>
+            </div>
+            <button className="btn-primary mt-4" disabled={!keyReady || ['PENDING', 'VERIFIED'].includes(profile?.kycStatus)} onClick={submitKyc}>Ký và gửi hồ sơ KYC</button>
           </section>
+
+          {reviewRecords && <section className="panel rounded-2xl p-6 lg:col-span-2">
+            <p className="eyebrow">Reviewer queue</p><h3 className="mt-2 text-xl font-bold">Hồ sơ KYC chờ duyệt</h3>
+            <div className="mt-5 space-y-4">{reviewRecords.length === 0 ? <p className="text-sm text-slate-500">Không có hồ sơ đang chờ.</p> : reviewRecords.map((record) => <article className="rounded-xl border border-line p-4" key={record._id}>
+              <div className="grid gap-2 text-sm sm:grid-cols-2"><strong>{record.fullName || 'Legacy proof'}</strong><span>{record.citizenId || 'Không có số CCCD'}</span><span>{record.dateOfBirth ? new Date(record.dateOfBirth).toLocaleDateString('vi-VN') : ''}</span><span>{record.address}</span></div>
+              {record.documents ? <div className="mt-4 grid gap-3 sm:grid-cols-2"><a href={record.documents.frontUrl} rel="noreferrer" target="_blank"><img alt="CCCD mặt trước" className="max-h-64 w-full rounded-lg object-contain" src={record.documents.frontUrl} /></a><a href={record.documents.backUrl} rel="noreferrer" target="_blank"><img alt="CCCD mặt sau" className="max-h-64 w-full rounded-lg object-contain" src={record.documents.backUrl} /></a></div> : <p className="mt-3 text-xs text-amber">Legacy proof không có ảnh; nên từ chối và yêu cầu gửi lại.</p>}
+              <div className="mt-4 flex gap-2"><button className="btn-primary" disabled={!record.documents} onClick={() => reviewKyc(record._id, 'VERIFIED')}>Duyệt</button><button className="btn-secondary" onClick={() => reviewKyc(record._id, 'REJECTED')}>Từ chối</button></div>
+            </article>)}</div>
+          </section>}
         </div>
       </div>
     </div>

@@ -34,6 +34,7 @@ exports.uploadToCloudinary = (
   fileBuffer,
   mimeType,
   folder = "securechat/messages",
+  options = {},
 ) => {
   return new Promise((resolve, reject) => {
     try {
@@ -52,6 +53,7 @@ exports.uploadToCloudinary = (
       {
         folder,
         resource_type: resourceType,
+        ...options,
       },
       (error, result) => {
         if (error) {
@@ -71,17 +73,29 @@ exports.uploadToCloudinary = (
   });
 };
 
+exports.signedAuthenticatedImageUrl = (publicId, format) => {
+  configureCloudinary();
+  return cloudinary.url(publicId, {
+    secure: true,
+    sign_url: true,
+    type: "authenticated",
+    resource_type: "image",
+    format,
+  });
+};
+
 /**
  * Xóa file khỏi Cloudinary theo publicId.
  *
  * @param {string} publicId
  * @param {string} resourceType
  */
-exports.deleteFromCloudinary = async (publicId, resourceType = "image") => {
+exports.deleteFromCloudinary = async (publicId, resourceType = "image", type = "upload") => {
   try {
     configureCloudinary();
     await cloudinary.uploader.destroy(publicId, {
       resource_type: resourceType,
+      type,
     });
   } catch (err) {
     console.error("[deleteFromCloudinary]", err.message);

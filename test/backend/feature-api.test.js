@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, describe, test } from 'node:test'
 import { createRequire } from 'node:module'
+import crypto from 'node:crypto'
 import express from 'express'
 import mongoose from 'mongoose'
 import { MongoMemoryServer } from 'mongodb-memory-server'
@@ -18,6 +19,10 @@ const groupRoutes = require('../../src/backend/src/routes/group.routes.js')
 const kycRoutes = require('../../src/backend/src/routes/kyc.routes.js')
 const userRoutes = require('../../src/backend/src/routes/user.routes.js')
 const Message = require('../../src/backend/src/models/Message.model.js')
+const User = require('../../src/backend/src/models/User.model.js')
+const KYCRecord = require('../../src/backend/src/models/KYCRecord.model.js')
+const cloudinaryUtils = require('../../src/backend/src/utils/cloudinary.utils.js')
+const signatureUtils = require('../../src/backend/src/utils/signature.utils.js')
 
 const app = express()
 const realtimeEvents = []
@@ -34,6 +39,8 @@ app.use('/groups', groupRoutes)
 app.use('/kyc', kycRoutes)
 
 let mongo
+let uploadSequence = 0
+const deletedCloudinaryAssets = []
 
 before(async () => {
   mongo = await MongoMemoryServer.create({ instance: { launchTimeout: 60_000 } })
@@ -43,6 +50,12 @@ before(async () => {
 beforeEach(async () => {
   await mongoose.connection.db.dropDatabase()
   realtimeEvents.length = 0
+  uploadSequence = 0
+  deletedCloudinaryAssets.length = 0
+  cloudinaryUtils.uploadToCloudinary = async () => ({ publicId: `kyc-test-${++uploadSequence}`, format: 'png', url: 'private' })
+  cloudinaryUtils.deleteFromCloudinary = async (publicId, resourceType, type) => deletedCloudinaryAssets.push({ publicId, resourceType, type })
+  cloudinaryUtils.signedAuthenticatedImageUrl = (publicId) => `https://signed.example/${publicId}`
+  signatureUtils.verifyEnvelopeSignature = async () => true
 })
 
 after(async () => {
@@ -54,6 +67,23 @@ async function register(username, email) {
   const response = await request(app).post('/auth/register').send({ username, email, password: 'correct-horse-42', confirmPassword: 'correct-horse-42' })
   assert.equal(response.status, 201)
   return response.body
+}
+
+async function submitKyc(account, overrides = {}) {
+  const pngHeader = Buffer.from('89504e470d0a1a0a', 'hex')
+  const front = Buffer.concat([pngHeader, Buffer.from(overrides.front || 'front-image')])
+  const back = Buffer.concat([pngHeader, Buffer.from(overrides.back || 'back-image')])
+  const details = {
+    fullName: overrides.fullName || 'Nguyen Van Alice', citizenId: overrides.citizenId || '012345678901',
+    dateOfBirth: overrides.dateOfBirth || '2000-01-02', address: overrides.address || '123 Test Street',
+  }
+  const payload = JSON.stringify({ ...details, frontHash: crypto.createHash('sha256').update(front).digest('hex'), backHash: crypto.createHash('sha256').update(back).digest('hex') })
+  const hash = overrides.hash || crypto.createHash('sha256').update(payload).digest('hex')
+  await User.findByIdAndUpdate(account.user.id, { publicKey: 'public-key' })
+  return request(app).post('/kyc/submit').set('Authorization', `Bearer ${account.accessToken}`)
+    .field({ ...details, hash, signature: 'signed-hash', pubkey: 'public-key' })
+    .attach('documentFront', front, { filename: 'front.png', contentType: 'image/png' })
+    .attach('documentBack', back, { filename: 'back.png', contentType: 'image/png' })
 }
 
 describe('integrated feature API', () => {
@@ -113,6 +143,7 @@ describe('integrated feature API', () => {
     const alice = await register('alice', 'alice@example.com')
     const bob = await register('bobby', 'bob@example.com')
     const carol = await register('carol', 'carol@example.com')
+    await User.updateMany({ _id: { $in: [alice.user.id, bob.user.id] } }, { kycStatus: 'VERIFIED' })
 
     await request(app)
       .post('/users/pubkey')
@@ -172,11 +203,24 @@ describe('integrated feature API', () => {
     assert.equal(group.status, 201)
     const groupNotifications = realtimeEvents.filter((entry) => entry.event === 'conversation_created' && String(entry.payload.conversationId) === String(group.body.group._id))
     assert.deepEqual(new Set(groupNotifications.map((entry) => entry.room)), new Set([`user:${bob.user.id}`, `user:${carol.user.id}`]))
+
+    const kycGroup = await request(app).post('/groups').set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ name: 'Verified group', mode: 'KYC', memberIds: [bob.user.id] })
+    assert.equal(kycGroup.status, 201)
+    const blockedMember = await request(app).post(`/groups/${kycGroup.body.group._id}/members`)
+      .set('Authorization', `Bearer ${alice.accessToken}`).send({ userId: carol.user.id })
+    assert.equal(blockedMember.status, 403)
+    assert.equal(blockedMember.body.code, 'KYC_REQUIRED')
   })
 
   test('keeps separate KYC and Privacy direct conversations for the same users', async () => {
     const alice = await register('alice', 'alice@example.com')
     const bob = await register('bobby', 'bob@example.com')
+
+    const blockedKyc = await request(app).post(`/users/${bob.user.id}/conversation`).set('Authorization', `Bearer ${alice.accessToken}`).send({ mode: 'KYC' })
+    assert.equal(blockedKyc.status, 403)
+    assert.equal(blockedKyc.body.code, 'KYC_REQUIRED')
+    await User.updateMany({ _id: { $in: [alice.user.id, bob.user.id] } }, { kycStatus: 'VERIFIED' })
 
     const kyc = await request(app)
       .post(`/users/${bob.user.id}/conversation`)
@@ -219,10 +263,11 @@ describe('integrated feature API', () => {
 
   test('places client-signed KYC proof in pending state', async () => {
     const alice = await register('alice', 'alice@example.com')
-    const submitted = await request(app)
-      .post('/kyc/submit')
-      .set('Authorization', `Bearer ${alice.accessToken}`)
-      .send({ hash: 'a'.repeat(64), signature: 'signed-hash', pubkey: 'public-key' })
+    const tampered = await submitKyc(alice, { hash: 'a'.repeat(64) })
+    assert.equal(tampered.status, 409)
+    assert.equal(tampered.body.code, 'INVALID_KYC_PROOF')
+    assert.equal(uploadSequence, 0)
+    const submitted = await submitKyc(alice)
 
     assert.equal(submitted.status, 201)
     assert.equal(submitted.body.kycRecord.status, 'PENDING')
@@ -234,10 +279,7 @@ describe('integrated feature API', () => {
   test('restricts KYC reviews and synchronizes reviewer decisions', async () => {
     const alice = await register('alice', 'alice@example.com')
     const reviewer = await register('reviewer', 'reviewer@example.com')
-    const submitted = await request(app)
-      .post('/kyc/submit')
-      .set('Authorization', `Bearer ${alice.accessToken}`)
-      .send({ hash: 'b'.repeat(64), signature: 'signed-hash', pubkey: 'public-key' })
+    const submitted = await submitKyc(alice)
 
     const denied = await request(app)
       .get('/kyc/reviews')
@@ -250,6 +292,7 @@ describe('integrated feature API', () => {
       .set('Authorization', `Bearer ${reviewer.accessToken}`)
     assert.equal(queue.status, 200)
     assert.equal(queue.body.records.length, 1)
+    assert.match(queue.body.records[0].documents.frontUrl, /^https:\/\/signed\.example\//)
 
     const reviewed = await request(app)
       .patch(`/kyc/reviews/${submitted.body.kycRecord.id}`)
@@ -257,14 +300,18 @@ describe('integrated feature API', () => {
       .send({ status: 'REJECTED', rejectionReason: 'The submitted proof cannot be validated.' })
     assert.equal(reviewed.status, 200)
     assert.equal(reviewed.body.kycRecord.status, 'REJECTED')
+    assert.deepEqual(deletedCloudinaryAssets, [
+      { publicId: 'kyc-test-1', resourceType: 'image', type: 'authenticated' },
+      { publicId: 'kyc-test-2', resourceType: 'image', type: 'authenticated' },
+    ])
+    const rejectedRecord = await KYCRecord.findById(submitted.body.kycRecord.id).lean()
+    assert.equal(rejectedRecord.documentFrontPublicId, null)
+    assert.equal(rejectedRecord.documentBackPublicId, null)
 
     const status = await request(app).get('/kyc/status').set('Authorization', `Bearer ${alice.accessToken}`)
     assert.equal(status.body.kycStatus, 'REJECTED')
 
-    const resubmitted = await request(app)
-      .post('/kyc/submit')
-      .set('Authorization', `Bearer ${alice.accessToken}`)
-      .send({ hash: 'c'.repeat(64), signature: 'new-signature', pubkey: 'public-key' })
+    const resubmitted = await submitKyc(alice, { front: 'new-front', back: 'new-back' })
     assert.equal(resubmitted.status, 201)
     assert.equal(resubmitted.body.kycRecord.status, 'PENDING')
     delete process.env.KYC_REVIEWER_USER_IDS
