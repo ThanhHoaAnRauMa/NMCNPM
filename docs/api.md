@@ -105,6 +105,8 @@ Reviewer access is controlled by `KYC_REVIEWER_USER_IDS`. Reviewers cannot decid
 
 ## Temporary Message Search
 
+These endpoints remain available for Week 2/API compatibility. The current conversation-search UI does not depend on them: it pages `GET /chat/:conversationId/messages`, decrypts locally, and performs substring matching without uploading plaintext.
+
 ### `POST /messages/index-snippet`
 
 Opt-in body: `{ messageId, conversationId, senderId, snippet }`. Snippet max is 2000 characters and expires after 24 hours. Response `201`: `{ "id": "..." }`.

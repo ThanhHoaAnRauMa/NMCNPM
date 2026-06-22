@@ -45,6 +45,15 @@ flowchart TD
 
 At session startup, the frontend compares its IndexedDB public bundle with `/users/me.publicKey` and blocks signing/encryption when they differ. A public-key update notifies online conversation participants to refresh recipient keys. Changing a public key does not re-encrypt history. Password-encrypted backup provides manual multi-device recovery; automatic trusted-device synchronization is not implemented.
 
+## Conversation Search Flow
+
+1. The browser pages through all persisted messages in the selected KYC conversation.
+2. It decrypts each text envelope locally in bounded batches.
+3. It performs case-insensitive substring matching and displays sender, timestamp, highlighted content, and a jump-to-message action.
+4. Undecryptable records are counted and excluded; plaintext is not uploaded for this UI flow.
+
+Privacy conversations search only messages still present in the current browser session because their ciphertext is not persisted. The opt-in `MessageSearch` TTL API remains available for compatibility but is not used by the conversation search panel.
+
 ## Forensic Flow
 
 1. The authenticated browser pages through persisted KYC-mode ciphertext and decrypts readable transcript entries locally.

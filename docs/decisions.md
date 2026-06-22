@@ -46,6 +46,17 @@ This file records decisions that can be inferred from the current implementation
 | Decision | Use `MessageSearch` for opt-in plaintext snippets with a 24-hour TTL and text index. |
 | Consequences | Search can work only for snippets explicitly uploaded by clients. Authorization is still required before production use. |
 
+## Local Full-History Conversation Search
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | MongoDB text search over opt-in 24-hour snippets could not provide substring matching or complete conversation results under E2EE. |
+| Rationale | The browser already owns the decryption key and can search authorized plaintext without adding server-side plaintext retention. |
+| Alternatives Considered | Store permanent plaintext; regex-search ciphertext; keep the snippet-only UI. Permanent plaintext weakens E2EE, ciphertext cannot be meaningfully regex-searched, and snippet-only results are incomplete. |
+| Decision | Page all persisted messages for the selected conversation, decrypt in bounded browser batches, perform case-insensitive substring matching, and show sender/time/jump metadata. Keep the snippet API for compatibility only. |
+| Consequences | Search speed depends on conversation size and local crypto performance. Messages whose keys are unavailable cannot be searched, and Privacy mode can search only the current in-memory session. |
+
 ## Opt-In Plaintext AI Processing
 
 | Field | Decision |

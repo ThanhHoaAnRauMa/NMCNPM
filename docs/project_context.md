@@ -47,7 +47,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | JWT-authenticated realtime encrypted chat | Implemented |
 | Delivered/seen, typing, missed-message recovery | Implemented |
 | Encrypted attachment upload/download | Implemented; requires Cloudinary |
-| Opt-in 24-hour search snippets | Implemented; disabled by default in UI |
+| Conversation message search | Full persisted history is decrypted and substring-searched locally; sender/time/jump results implemented |
 | Gemini moderation before encryption | Implemented with allow-on-provider-failure policy |
 | Gemini conversation summary | Implemented only for explicit client-supplied plaintext |
 | KYC proof review | Submit, allowlisted review/reject, audit metadata, and rejected resubmission implemented |
@@ -60,7 +60,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | --- | --- |
 | Primary message plaintext must not reach MongoDB | `Message` stores encrypted envelopes and signatures only |
 | Browser private keys must not reach backend | Stored in IndexedDB; API receives public bundle only |
-| Search and AI need plaintext | Explicit client opt-in; snippets expire after 24h; AI source plaintext is not stored |
+| Search and AI need plaintext | Conversation search decrypts locally without uploading plaintext; legacy snippet API remains opt-in/24h; AI source plaintext is not stored |
 | Feature models must use canonical DB connection | CommonJS models resolve the root Mongoose singleton through `utils/mongoose.js` |
 | Existing database contracts must remain readable | Canonical models accept the existing collection names and preserve existing fields |
 | Backend syntax CI must inspect owned source only | Checks `src/backend/server.js` and `src/backend/src`; dependency bundles are excluded |
