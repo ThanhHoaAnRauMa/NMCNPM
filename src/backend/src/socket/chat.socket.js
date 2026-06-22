@@ -29,6 +29,15 @@ function removeOnlineSocket(userId, socketId) {
   return true;
 }
 
+async function ensureConversationRoom(socket, joinedConversations, conversationId) {
+  const roomId = String(conversationId);
+  if (!joinedConversations.has(roomId)) {
+    await socket.join(roomId);
+    joinedConversations.add(roomId);
+  }
+  return roomId;
+}
+
 module.exports = function registerChatSocket(io) {
   io.use((socket, next) => {
     try {
@@ -65,8 +74,7 @@ module.exports = function registerChatSocket(io) {
           emitError("join_conversation", "NOT_A_MEMBER", "Conversation not found or access denied.");
           return acknowledge?.({ success: false });
         }
-        await socket.join(conversationId);
-        joinedConversations.add(conversationId);
+        await ensureConversationRoom(socket, joinedConversations, conversationId);
         return acknowledge?.({ success: true });
       } catch (error) {
         console.error("[join_conversation]", error);
@@ -105,6 +113,10 @@ module.exports = function registerChatSocket(io) {
         if (conversation.mode === "PRIVACY" || conversation.mode === "Privacy") {
           return emitError("send_message", "USE_PRIVATE_EVENT", "Use send_private_message for privacy mode.", { tempId });
         }
+
+        // A creator can send before the asynchronous join event finishes. Join here so
+        // the accepted message is always echoed back to the sender's active workspace.
+        await ensureConversationRoom(socket, joinedConversations, conversationId);
 
         if (conversation.type === "DIRECT" || conversation.type === "direct") {
           const receiverId = conversation.members.find((id) => id.toString() !== socket.userId)?.toString();
@@ -262,3 +274,5 @@ module.exports = function registerChatSocket(io) {
     });
   });
 };
+
+module.exports.ensureConversationRoom = ensureConversationRoom;
