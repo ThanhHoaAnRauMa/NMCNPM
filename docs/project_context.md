@@ -16,7 +16,7 @@ Code is the source of truth. Requirement documents describe planned scope and mu
 | Database/Search | Mongoose models, indexes, TTL search snippets | `src/db/` |
 | AI | Gemini moderation and opt-in summary | `src/routes/ai.js`, `src/services/` |
 | Crypto | Browser Web Crypto plus standalone Node module | `frontend/src/lib/crypto.js`, `src/crypto/` |
-| Blockchain | Foundry contract, deployment script, tests | `src/ForensisChat.sol`, `script/`, `test/` |
+| Blockchain | Foundry contract deployed through an ERC1967 proxy on Sepolia | `src/ForensisChat.sol`, `script/`, `broadcast/`, `test/` |
 | DevOps | Backend/frontend images, Compose, CI, Render production services | `Dockerfile`, `frontend/Dockerfile`, `.github/` |
 
 ## Runtime Summary
@@ -75,7 +75,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Multi-device crypto | Encrypted manual recovery exists; no automatic trusted-device transfer or key history |
 | Privacy mode | Ephemeral delivery has no offline recovery by design |
 | Attachments | Production Cloudinary is configured; local and future environments still require credentials and browser access to encrypted blobs |
-| Deployment | API, frontend, Atlas, Gemini, and Cloudinary are configured; Sepolia contract details, KYC reviewer IDs, and GitHub deploy secrets remain |
+| Deployment | API, frontend, Atlas, Gemini, Cloudinary, and Sepolia proxy are configured; KYC reviewer IDs and GitHub deploy secrets remain |
 | Operations | No Atlas automation, secret rotation workflow, metrics, tracing, or centralized logs |
 
 ## Validation Entry Points

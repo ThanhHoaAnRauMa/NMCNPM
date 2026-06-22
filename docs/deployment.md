@@ -81,10 +81,12 @@ The backend syntax step checks `src/backend/server.js` and JavaScript under `src
 | API and Socket.IO | `https://secure-chat-forensics-api.onrender.com` | Render web service | Deployed from `main` |
 | React application | `https://secure-chat-forensics-web.onrender.com` | Render static site | Deployed from `main` |
 | Database | MongoDB Atlas | Atlas | Connected; credentials are external secrets |
+| ForensisChat proxy | [`0x8Dc323f07F7CdF275d33c842245b598Fc155D2D0`](https://sepolia.etherscan.io/address/0x8Dc323f07F7CdF275d33c842245b598Fc155D2D0) | Ethereum Sepolia | Deployed; frontend configured |
+| ForensisChat implementation | [`0x0cB12fF931fBa693b13f13B23f8486aa7b21Ae3e`](https://sepolia.etherscan.io/address/0x0cB12fF931fBa693b13f13B23f8486aa7b21Ae3e) | Ethereum Sepolia | Deployed behind ERC1967 proxy |
 
 The deploy workflow conditionally triggers the Render backend after successful CI on `main` using `RENDER_API_KEY` and `RENDER_SERVICE_ID`. Render also watches `main` for automatic deploys. The frontend is built with `VITE_API_URL` set to the production API, and the API allows the production frontend through `CORS_ORIGIN`.
 
-Gemini and Cloudinary are configured on the production backend and must be verified through authenticated AI and encrypted-file requests after deployment. Sepolia contract details, KYC reviewer IDs, and GitHub deployment secrets remain operator-managed configuration.
+Gemini and Cloudinary are configured on the production backend and have authenticated production smoke coverage. The frontend `VITE_CONTRACT_ADDRESS` points to the proxy, not the implementation. Deployment transactions are recorded in `broadcast/DeployForensisChat.s.sol/11155111/`; the proxy owner remains the dedicated deployment wallet. KYC reviewer IDs and GitHub deployment secrets remain operator-managed configuration.
 
 ## Operational Gaps
 
