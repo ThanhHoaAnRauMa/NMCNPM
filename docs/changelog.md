@@ -7,12 +7,14 @@ Added:
 * Render production API and static frontend deployment records.
 * Production Cloudinary configuration for encrypted attachment storage.
 * Sepolia deployment of the `ForensisChat` implementation and ERC1967 proxy, with committed Foundry broadcast records.
+* Production KYC reviewer allowlist and GitHub-to-Render deployment secrets.
 
 Changed:
 
 * Increased Gemini moderation timeout from 2 seconds to a production-tolerant 5-second default with a 10-second configuration cap.
 * Updated deployment and project context documentation to reflect the live Render, Atlas, and Gemini configuration.
 * Configured the production frontend to use the deployed Sepolia proxy address.
+* Validated the GitHub Render deploy workflow and authenticated KYC review queue against production.
 
 Fixed:
 

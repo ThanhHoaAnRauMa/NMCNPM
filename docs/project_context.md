@@ -75,7 +75,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Multi-device crypto | Encrypted manual recovery exists; no automatic trusted-device transfer or key history |
 | Privacy mode | Ephemeral delivery has no offline recovery by design |
 | Attachments | Production Cloudinary is configured; local and future environments still require credentials and browser access to encrypted blobs |
-| Deployment | API, frontend, Atlas, Gemini, Cloudinary, and Sepolia proxy are configured; KYC reviewer IDs and GitHub deploy secrets remain |
+| Deployment | API, frontend, Atlas, Gemini, Cloudinary, Sepolia proxy, KYC reviewer allowlist, and GitHub-to-Render deploy secrets are configured |
 | Operations | No Atlas automation, secret rotation workflow, metrics, tracing, or centralized logs |
 
 ## Validation Entry Points
