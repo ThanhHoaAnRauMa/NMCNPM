@@ -39,10 +39,11 @@ flowchart TD
 3. Before sending text, the client explicitly calls AI moderation with plaintext.
 4. The client creates a random AES-256-GCM key, encrypts content, and RSA-wraps that AES key for every member.
 5. The client signs the serialized encrypted envelope and emits it through authenticated Socket.IO.
-6. KYC-mode ciphertext is stored in MongoDB. Privacy-mode ciphertext is relayed only.
-7. Recipients unwrap/decrypt locally and verify the sender signature against the published key.
+6. The backend verifies that signature against the account's current public key; stale devices receive `KEY_MISMATCH` before persistence or relay.
+7. KYC-mode ciphertext and the verified sender public-key snapshot are stored in MongoDB. Privacy-mode ciphertext is relayed only.
+8. Recipients unwrap/decrypt locally and verify against the message snapshot, falling back to the sender's current public key for legacy records.
 
-Changing a public key does not re-encrypt history. Encrypted file transfer provides manual multi-device recovery; automatic trusted-device synchronization is not implemented.
+At session startup, the frontend compares its IndexedDB public bundle with `/users/me.publicKey` and blocks signing/encryption when they differ. A public-key update notifies online conversation participants to refresh recipient keys. Changing a public key does not re-encrypt history. Password-encrypted backup provides manual multi-device recovery; automatic trusted-device synchronization is not implemented.
 
 ## Forensic Flow
 
@@ -86,5 +87,5 @@ Socket authentication occurs during the handshake with `auth.token`. Room join, 
 
 * Root and feature directories still contain parallel schema declarations; the canonical runtime sharing rule is documented in `docs/database.md`.
 * Root proposals require an explicit participant-wallet transaction; there is no unattended signer or periodic commit worker.
-* Historical signatures can fail after public-key rotation because the user schema has no public-key history.
+* Messages created before sender public-key snapshots were introduced can still fail signature verification after key rotation; no migration source exists for keys that were already overwritten.
 * Refresh tokens are returned to JavaScript because cookie-based session rotation is not implemented.

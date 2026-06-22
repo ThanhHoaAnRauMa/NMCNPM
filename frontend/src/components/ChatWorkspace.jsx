@@ -27,7 +27,7 @@ function HighlightedSnippet({ value = '' }) {
   })
 }
 
-export default function ChatWorkspace({ api, socket, conversation, currentUser, identity }) {
+export default function ChatWorkspace({ api, socket, conversation, currentUser, identity, keyStatus, onKeyMismatch }) {
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
@@ -66,8 +66,9 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
           decrypted = true
         }
       }
-      if (sender?.publicKey && message.signature) {
-        verified = await verifyPayload(message.encryptedContent, message.signature, sender.publicKey)
+      const verificationKey = message.senderPublicKey || sender?.publicKey
+      if (verificationKey && message.signature) {
+        verified = await verifyPayload(message.encryptedContent, message.signature, verificationKey)
       }
     }
     return { ...message, senderId: sender || message.senderId, text, decrypted, verified }
@@ -119,6 +120,8 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     }
     const onStopTyping = ({ userId: typingUserId }) => setTypingUsers((current) => current.filter((id) => id !== typingUserId))
     const onSocketError = (payload) => {
+      if (payload.code === 'KEY_MISMATCH') onKeyMismatch?.()
+      if (payload.tempId) pendingPlaintext.current.delete(payload.tempId)
       if (['send_message', 'send_private_message'].includes(payload.event)) setError(payload.message)
     }
 
@@ -145,6 +148,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
 
   const ensureReady = () => {
     if (!identity) throw new Error('Thiết bị chưa có khóa mã hóa.')
+    if (keyStatus !== 'ready') throw new Error('Khóa thiết bị không khớp tài khoản. Mở Hồ sơ để restore hoặc đồng bộ trước khi gửi.')
     if (recipients.length !== members.length) throw new Error('Một hoặc nhiều thành viên chưa có public key.')
     if (!socket?.connected) throw new Error('Kết nối realtime chưa sẵn sàng.')
   }
@@ -311,8 +315,8 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
           <div className="flex items-end gap-2 rounded-2xl border border-line bg-ink/70 p-2 focus-within:border-mint/60">
             <input ref={fileInput} className="hidden" type="file" onChange={uploadFile} />
             <button className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xl text-slate-500 hover:bg-white/5 hover:text-paper" disabled={isPrivacy || sending} onClick={() => fileInput.current?.click()} type="button" title={isPrivacy ? 'Privacy mode không lưu file trên server' : 'Gửi file mã hóa'}>+</button>
-            <textarea className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-slate-600" maxLength={4000} placeholder={identity ? 'Nhập tin nhắn...' : 'Tạo khóa thiết bị để nhắn tin'} rows={1} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form.requestSubmit() } }} />
-            <button className="btn-primary h-10 shrink-0" disabled={!draft.trim() || sending || !identity} type="submit">{sending ? '...' : 'Gửi'}</button>
+            <textarea className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-slate-600" maxLength={4000} placeholder={keyStatus === 'ready' ? 'Nhập tin nhắn...' : 'Đồng bộ khóa thiết bị để nhắn tin'} rows={1} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form.requestSubmit() } }} />
+            <button className="btn-primary h-10 shrink-0" disabled={!draft.trim() || sending || keyStatus !== 'ready'} type="submit">{sending ? '...' : 'Gửi'}</button>
           </div>
           {!isPrivacy && <label className="mt-2 flex items-center gap-2 text-[10px] text-slate-600"><input checked={indexSearch} type="checkbox" onChange={(event) => { setIndexSearch(event.target.checked); localStorage.setItem('secure-chat-index-search', String(event.target.checked)) }} /> Cho phép gửi snippet plaintext lên chỉ mục tìm kiếm TTL 24 giờ</label>}
         </form>

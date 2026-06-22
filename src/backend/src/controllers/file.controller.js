@@ -1,7 +1,9 @@
 const path = require("path");
 const Conversation = require("../models/Conversation.model");
 const Message = require("../models/Message.model");
+const User = require("../models/User.model");
 const { uploadToCloudinary } = require("../utils/cloudinary.utils");
+const { verifyEnvelopeSignature } = require("../utils/signature.utils");
 
 async function memberConversation(conversationId, userId) {
   return Conversation.findOne({ _id: conversationId, members: userId });
@@ -37,6 +39,10 @@ exports.uploadFile = async (req, res) => {
     if (conversation.members.some((memberId) => !envelope.keys[memberId.toString()])) {
       return res.status(400).json({ success: false, message: "Encrypted file must include a wrapped key for every member." });
     }
+    const sender = await User.findById(req.userId).select("publicKey");
+    if (!sender?.publicKey || !await verifyEnvelopeSignature(encryptedContent, signature, sender.publicKey)) {
+      return res.status(409).json({ success: false, code: "KEY_MISMATCH", message: "Device key does not match the account public key. Restore or synchronize the device key before uploading." });
+    }
 
     const uploaded = await uploadToCloudinary(req.file.buffer, "application/octet-stream", "securechat/messages");
     const originalName = safeName(req.body.originalName);
@@ -46,6 +52,7 @@ exports.uploadFile = async (req, res) => {
       senderId: req.userId,
       encryptedContent,
       signature,
+      senderPublicKey: sender.publicKey,
       clientMessageId: req.body.tempId || null,
       msgType: "FILE",
       status: "SENT",
@@ -62,6 +69,7 @@ exports.uploadFile = async (req, res) => {
       senderId: req.userId,
       encryptedContent,
       signature,
+      senderPublicKey: sender.publicKey,
       msgType: "FILE",
       status: message.status,
       fileUrl: message.fileUrl,
@@ -79,6 +87,7 @@ exports.uploadFile = async (req, res) => {
         senderId: req.userId,
         encryptedContent,
         signature,
+        senderPublicKey: sender.publicKey,
         msgType: "FILE",
         status: message.status,
         fileUrl: message.fileUrl,
@@ -115,7 +124,7 @@ exports.getFilesByConversation = async (req, res) => {
       .sort({ _id: -1 })
       .limit(limit)
       .populate("senderId", "username displayName avatarUrl publicKey")
-      .select("encryptedContent signature fileUrl fileName fileMime fileSizeBytes senderId timestamp createdAt")
+      .select("encryptedContent signature senderPublicKey fileUrl fileName fileMime fileSizeBytes senderId timestamp createdAt")
       .lean();
     const nextCursor = files.length === limit ? files[files.length - 1]._id : null;
     return res.json({ success: true, files: files.reverse(), nextCursor });

@@ -17,6 +17,13 @@ exports.uploadPublicKey = async (req, res) => {
       return res.status(400).json({ success: false, message: "A valid public key is required." });
     }
     await User.findByIdAndUpdate(req.userId, { publicKey }, { runValidators: true });
+    const io = req.app.get("io");
+    if (io) {
+      const participantIds = await Conversation.distinct("members", { members: req.userId });
+      for (const participantId of participantIds) {
+        io.to(`user:${participantId}`).emit("user_key_updated", { userId: req.userId });
+      }
+    }
     return res.json({ success: true, message: "Public key updated." });
   } catch (error) {
     console.error("[uploadPublicKey]", error);

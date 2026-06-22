@@ -48,7 +48,7 @@ Successful register/login response:
 | GET | `/users/me` | None | Current profile |
 | PUT | `/users/profile` | `{ displayName?, avatarUrl? }` | Update public profile |
 | GET | `/users/search?q=...` | Query length 2-80 | Search username/email/display name |
-| POST | `/users/pubkey` | `{ publicKey }` | Store browser public-key bundle |
+| POST | `/users/pubkey` | `{ publicKey }` | Explicitly publish/replace the browser public-key bundle; clients compare it with IndexedDB before sending |
 | GET | `/users/:id/pubkey` | None | Read a member public-key bundle |
 | POST | `/users/:id/block` | None | Block user |
 | POST | `/users/:id/unblock` | None | Unblock user |
@@ -88,6 +88,8 @@ Successful register/login response:
 | GET | `/files/:conversationId/jump/:messageId` | Resolve attachment to source message metadata |
 
 Cloudinary stores ciphertext. The browser downloads and decrypts it locally.
+
+The upload signature must match the sender's current account public key. A stale device receives `409` with `code: "KEY_MISMATCH"` before the encrypted blob is uploaded.
 
 ## KYC
 

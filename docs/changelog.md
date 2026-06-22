@@ -8,6 +8,7 @@ Added:
 * Production Cloudinary configuration for encrypted attachment storage.
 * Sepolia deployment of the `ForensisChat` implementation and ERC1967 proxy, with committed Foundry broadcast records.
 * Production KYC reviewer allowlist and GitHub-to-Render deployment secrets.
+* Local/server device-key state detection and verified sender public-key snapshots for new messages.
 
 Changed:
 
@@ -22,6 +23,7 @@ Fixed:
 * Deferred Cloudinary SDK configuration until request time so runtime environment variables are available before upload or deletion.
 * Replaced serif heading fallbacks with a cross-platform sans-serif stack that renders Vietnamese diacritics consistently.
 * Ensured a direct-conversation creator receives the first persisted message even when sending before the asynchronous room join completes.
+* Blocked stale device identities from storing or relaying messages/files with invalid signatures, with explicit restore and synchronization recovery actions.
 
 Removed:
 

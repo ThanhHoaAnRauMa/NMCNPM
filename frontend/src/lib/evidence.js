@@ -61,7 +61,7 @@ export function createEvidencePackage({ conversation, messages, roomId }) {
     msgType: message.msgType || 'TEXT',
     encryptedContent: message.encryptedContent,
     signature: message.signature,
-    senderPublicKey: typeof message.senderId === 'object' ? message.senderId.publicKey : message.senderPublicKey,
+    senderPublicKey: message.senderPublicKey || (typeof message.senderId === 'object' ? message.senderId.publicKey : null),
     plaintext: message.plaintext ?? null,
   }))
   const leaves = records.map(messageLeaf)

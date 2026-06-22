@@ -156,6 +156,17 @@ This file records decisions that can be inferred from the current implementation
 | Decision | Export a versioned encrypted JSON backup bound to the account user ID and restore it locally before republishing only its public bundle. |
 | Consequences | Users must protect both backup and password; there is no forgotten-password recovery for the key file. |
 
+## Device-Key Consistency and Signature Snapshots
+
+| Field | Decision |
+| --- | --- |
+| Status | Accepted |
+| Context | A second browser could replace `User.publicKey` while an older browser retained a different private key in IndexedDB, producing undecryptable envelopes and invalid signatures. |
+| Rationale | Silent key replacement must not permit the backend to persist unauthenticated ciphertext, and later rotations must not invalidate signatures on newly accepted records. |
+| Alternatives Considered | Automatically republish every local key on login; support several independent device keys immediately. Automatic republishing causes devices to overwrite each other, while full multi-device key distribution requires a separate trust protocol. |
+| Decision | Compare local and server bundles at startup, require explicit restore/synchronization, notify online conversation participants to refresh recipient keys, verify every message/file signature against the current account key, and snapshot that verified key on persisted messages. |
+| Consequences | Stale clients are blocked with `KEY_MISMATCH`. Legacy messages whose signing key was already overwritten cannot be repaired without an external backup or historical key record. |
+
 ## Browser-Owned Evidence and Root Transactions
 
 | Field | Decision |

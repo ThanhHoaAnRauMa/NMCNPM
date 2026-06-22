@@ -2,6 +2,7 @@ const jwt = require("jsonwebtoken");
 const Conversation = require("../models/Conversation.model");
 const Message = require("../models/Message.model");
 const User = require("../models/User.model");
+const { verifyEnvelopeSignature } = require("../utils/signature.utils");
 
 const onlineUsers = new Map();
 const pendingPrivacy = new Map();
@@ -54,6 +55,7 @@ module.exports = function registerChatSocket(io) {
   io.on("connection", async (socket) => {
     const joinedConversations = new Set();
     addOnlineSocket(socket.userId, socket.id);
+    await socket.join(`user:${socket.userId}`);
     await User.findByIdAndUpdate(socket.userId, { isOnline: true }).catch((error) => {
       console.error("[socket online]", error);
     });
@@ -114,6 +116,11 @@ module.exports = function registerChatSocket(io) {
           return emitError("send_message", "USE_PRIVATE_EVENT", "Use send_private_message for privacy mode.", { tempId });
         }
 
+        const sender = await User.findById(socket.userId).select("publicKey");
+        if (!sender?.publicKey || !await verifyEnvelopeSignature(encryptedContent, signature, sender.publicKey)) {
+          return emitError("send_message", "KEY_MISMATCH", "Device key does not match the account public key. Restore or synchronize the device key before sending.", { tempId });
+        }
+
         // A creator can send before the asynchronous join event finishes. Join here so
         // the accepted message is always echoed back to the sender's active workspace.
         await ensureConversationRoom(socket, joinedConversations, conversationId);
@@ -131,6 +138,7 @@ module.exports = function registerChatSocket(io) {
           senderId: socket.userId,
           encryptedContent,
           signature,
+          senderPublicKey: sender.publicKey,
           clientMessageId: tempId || null,
           msgType: msgType || "TEXT",
           replyTo: replyTo || null,
@@ -144,6 +152,7 @@ module.exports = function registerChatSocket(io) {
           senderId: socket.userId,
           encryptedContent: message.encryptedContent,
           signature: message.signature,
+          senderPublicKey: message.senderPublicKey,
           msgType: message.msgType,
           status: message.status,
           replyTo: message.replyTo,
@@ -184,6 +193,10 @@ module.exports = function registerChatSocket(io) {
         if (!conversation || !["PRIVACY", "Privacy"].includes(conversation.mode)) {
           return emitError("send_private_message", "INVALID_PRIVACY_CONVERSATION", "Privacy conversation not found or access denied.", { tempId });
         }
+        const sender = await User.findById(socket.userId).select("publicKey");
+        if (!sender?.publicKey || !await verifyEnvelopeSignature(encryptedContent, signature, sender.publicKey)) {
+          return emitError("send_private_message", "KEY_MISMATCH", "Device key does not match the account public key. Restore or synchronize the device key before sending.", { tempId });
+        }
         if (conversation.type === "DIRECT" || conversation.type === "direct") {
           const receiverId = conversation.members.find((id) => id.toString() !== socket.userId)?.toString();
           const receiver = receiverId ? await User.findById(receiverId).select("blocklist") : null;
@@ -197,6 +210,7 @@ module.exports = function registerChatSocket(io) {
           senderId: socket.userId,
           encryptedContent,
           signature,
+          senderPublicKey: sender.publicKey,
           createdAt: new Date().toISOString(),
         });
         pendingPrivacy.set(tempId, {

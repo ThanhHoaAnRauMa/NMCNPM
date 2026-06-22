@@ -7,6 +7,7 @@ const MessageSchema = new mongoose.Schema(
     senderId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     encryptedContent: { type: String, required: true },
     signature: { type: String, required: true, maxlength: 16384 },
+    senderPublicKey: { type: String, maxlength: 16384, default: null },
     timestamp: { type: Date, default: Date.now, required: true },
     contentHash: { type: String, match: /^[a-f0-9]{64}$/i },
     clientMessageId: { type: String, trim: true, maxlength: 128, default: null },

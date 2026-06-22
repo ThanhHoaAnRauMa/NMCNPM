@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createKycProof } from '../lib/crypto.js'
 import { createIdentityBackup, restoreIdentityBackup } from '../lib/keyBackup.js'
 
-export default function ProfilePanel({ api, identity, onCreateIdentity, onProfileChanged, onRestoreIdentity, userId }) {
+export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentity, onProfileChanged, onRestoreIdentity, onSynchronizeIdentity, userId }) {
   const [profile, setProfile] = useState(null)
   const [form, setForm] = useState({ displayName: '', avatarUrl: '' })
   const [statement, setStatement] = useState('')
@@ -10,6 +10,7 @@ export default function ProfilePanel({ api, identity, onCreateIdentity, onProfil
   const [error, setError] = useState('')
   const [backupPassword, setBackupPassword] = useState('')
   const backupInput = useRef(null)
+  const keyReady = Boolean(identity) && keyStatus === 'ready'
 
   useEffect(() => {
     api.get('/users/me').then(({ user }) => {
@@ -33,7 +34,7 @@ export default function ProfilePanel({ api, identity, onCreateIdentity, onProfil
 
   const submitKyc = async () => {
     setError('')
-    if (!identity) return setError('Thiết bị cần có khóa ký trước khi gửi KYC.')
+    if (!keyReady) return setError('Khóa thiết bị phải khớp tài khoản trước khi gửi KYC.')
     if (statement.trim().length < 10) return setError('Nội dung xác minh phải có ít nhất 10 ký tự.')
     try {
       const proof = await createKycProof(statement.trim(), identity)
@@ -77,6 +78,22 @@ export default function ProfilePanel({ api, identity, onCreateIdentity, onProfil
     }
   }
 
+  const synchronizeLocalKey = async () => {
+    if (!window.confirm('Dùng khóa của thiết bị này làm khóa tài khoản? Thiết bị đang giữ khóa khác sẽ phải restore backup này.')) return
+    setError('')
+    try {
+      await onSynchronizeIdentity()
+      setNotice('Đã đồng bộ public key của thiết bị này với tài khoản.')
+    } catch (syncError) {
+      setError(syncError.message)
+    }
+  }
+
+  const replaceRemoteKey = async () => {
+    if (!window.confirm('Tạo khóa mới sẽ làm lịch sử dùng khóa cũ không thể giải mã nếu không có backup. Tiếp tục?')) return
+    await onCreateIdentity({ replace: true })
+  }
+
   return (
     <div className="scrollbar h-full overflow-y-auto p-5 sm:p-8">
       <div className="mx-auto max-w-4xl">
@@ -102,11 +119,13 @@ export default function ProfilePanel({ api, identity, onCreateIdentity, onProfil
           <section className="panel rounded-2xl p-6">
             <p className="eyebrow">Device key</p>
             <h3 className="mt-2 text-xl font-bold">Khóa mã hóa cục bộ</h3>
-            <div className={`mt-6 rounded-xl border p-4 ${identity ? 'border-mint/30 bg-mint/10' : 'border-amber/30 bg-amber/10'}`}>
-              <strong className={identity ? 'text-mint' : 'text-amber'}>{identity ? 'Thiết bị đã sẵn sàng' : 'Chưa có khóa trên thiết bị'}</strong>
-              <p className="mt-2 text-xs leading-5 text-slate-400">{identity ? 'RSA-OAEP dùng bọc khóa tin nhắn, ECDSA P-256 dùng ký payload.' : 'Tạo khóa mới sẽ cập nhật public key tài khoản. Lịch sử mã hóa cho khóa cũ không thể giải mã bằng khóa mới.'}</p>
+            <div className={`mt-6 rounded-xl border p-4 ${keyReady ? 'border-mint/30 bg-mint/10' : 'border-amber/30 bg-amber/10'}`}>
+              <strong className={keyReady ? 'text-mint' : 'text-amber'}>{keyReady ? 'Thiết bị đã sẵn sàng' : keyStatus === 'mismatch' ? 'Khóa thiết bị không khớp tài khoản' : keyStatus === 'remote-only' ? 'Khóa tài khoản chỉ có trên thiết bị khác' : 'Khóa thiết bị chưa sẵn sàng'}</strong>
+              <p className="mt-2 text-xs leading-5 text-slate-400">{keyReady ? 'RSA-OAEP dùng bọc khóa tin nhắn, ECDSA P-256 dùng ký payload.' : 'Restore backup để giữ cùng danh tính số. Chỉ thay thế hoặc đồng bộ khóa khi bạn chấp nhận các thiết bị dùng khóa khác sẽ bị lệch.'}</p>
             </div>
-            {!identity && <button className="btn-secondary mt-5 w-full" onClick={onCreateIdentity}>Tạo khóa cho thiết bị này</button>}
+            {!identity && keyStatus === 'missing' && <button className="btn-secondary mt-5 w-full" onClick={() => onCreateIdentity()}>Tạo khóa cho thiết bị này</button>}
+            {!identity && keyStatus === 'remote-only' && <button className="btn-secondary mt-5 w-full" onClick={replaceRemoteKey}>Thay thế bằng khóa mới</button>}
+            {identity && ['mismatch', 'local-only'].includes(keyStatus) && <button className="btn-secondary mt-5 w-full" onClick={synchronizeLocalKey}>Dùng khóa thiết bị này cho tài khoản</button>}
             <div className="mt-5 border-t border-line pt-5 text-xs leading-5 text-slate-500">Private key được lưu trong IndexedDB của trình duyệt và không xuất hiện trong request API.</div>
           </section>
 
@@ -129,7 +148,7 @@ export default function ProfilePanel({ api, identity, onCreateIdentity, onProfil
             </div>
             <p className="mt-4 text-sm leading-6 text-slate-400">Bản hiện tại chỉ nhận hash và chữ ký để đưa vào hàng chờ. Backend không tự xác nhận VERIFIED; cần quy trình reviewer riêng.</p>
             <textarea className="field mt-5 min-h-28 resize-y" placeholder="Nhập thông tin hoặc mã tham chiếu tài liệu cần ký..." value={statement} onChange={(event) => setStatement(event.target.value)} />
-            <button className="btn-primary mt-4" disabled={!identity || ['PENDING', 'VERIFIED'].includes(profile?.kycStatus)} onClick={submitKyc}>Hash, ký và gửi xét duyệt</button>
+            <button className="btn-primary mt-4" disabled={!keyReady || ['PENDING', 'VERIFIED'].includes(profile?.kycStatus)} onClick={submitKyc}>Hash, ký và gửi xét duyệt</button>
           </section>
         </div>
       </div>
