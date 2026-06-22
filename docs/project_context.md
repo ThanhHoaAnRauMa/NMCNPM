@@ -74,8 +74,8 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Forensics | No unattended periodic root worker; wallet approval is required to avoid a server custody key |
 | Multi-device crypto | Encrypted manual recovery exists; no automatic trusted-device transfer or key history |
 | Privacy mode | Ephemeral delivery has no offline recovery by design |
-| Attachments | Requires Cloudinary credentials and browser CORS access to encrypted blobs |
-| Deployment | API, frontend, Atlas, and Gemini are configured; Cloudinary, Sepolia contract details, KYC reviewer IDs, and GitHub deploy secrets remain |
+| Attachments | Production Cloudinary is configured; local and future environments still require credentials and browser access to encrypted blobs |
+| Deployment | API, frontend, Atlas, Gemini, and Cloudinary are configured; Sepolia contract details, KYC reviewer IDs, and GitHub deploy secrets remain |
 | Operations | No Atlas automation, secret rotation workflow, metrics, tracing, or centralized logs |
 
 ## Validation Entry Points

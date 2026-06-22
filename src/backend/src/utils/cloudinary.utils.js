@@ -1,10 +1,26 @@
 const cloudinary = require("cloudinary").v2;
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+function getCloudinaryConfig(env = process.env) {
+  const config = {
+    cloud_name: env.CLOUDINARY_CLOUD_NAME,
+    api_key: env.CLOUDINARY_API_KEY,
+    api_secret: env.CLOUDINARY_API_SECRET,
+  };
+
+  if (!config.cloud_name || !config.api_key || !config.api_secret) {
+    throw new Error("Cloudinary credentials are not configured.");
+  }
+
+  return config;
+}
+
+function configureCloudinary() {
+  const config = getCloudinaryConfig();
+  cloudinary.config(config);
+  return config;
+}
+
+exports.getCloudinaryConfig = getCloudinaryConfig;
 
 /**
  * Upload file buffer lên Cloudinary.
@@ -20,6 +36,13 @@ exports.uploadToCloudinary = (
   folder = "securechat/messages",
 ) => {
   return new Promise((resolve, reject) => {
+    try {
+      configureCloudinary();
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
     let resourceType = "raw";
     if (mimeType.startsWith("image/")) resourceType = "image";
     if (mimeType.startsWith("video/")) resourceType = "video";
@@ -56,6 +79,7 @@ exports.uploadToCloudinary = (
  */
 exports.deleteFromCloudinary = async (publicId, resourceType = "image") => {
   try {
+    configureCloudinary();
     await cloudinary.uploader.destroy(publicId, {
       resource_type: resourceType,
     });

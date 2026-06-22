@@ -5,6 +5,7 @@
 Added:
 
 * Render production API and static frontend deployment records.
+* Production Cloudinary configuration for encrypted attachment storage.
 
 Changed:
 
@@ -14,6 +15,7 @@ Changed:
 Fixed:
 
 * Prevented healthy Gemini requests from unnecessarily entering the allow-on-provider-failure fallback under normal production network latency.
+* Deferred Cloudinary SDK configuration until request time so runtime environment variables are available before upload or deletion.
 
 Removed:
 
