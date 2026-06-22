@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { API_URL, ApiError, createApiClient } from '../lib/api.js'
 
 const SESSION_KEY = 'secure-chat-session'
+const AUTH_TIMEOUT_MS = 20_000
 
 function readSession() {
   try {
@@ -25,15 +26,25 @@ export function useSession() {
   const api = useMemo(() => createApiClient(() => sessionRef.current, setSession), [setSession])
 
   const authenticate = useCallback(async (mode, credentials) => {
-    const response = await fetch(`${API_URL}/auth/${mode}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(credentials),
-    })
-    const payload = await response.json().catch(() => ({}))
-    if (!response.ok) throw new ApiError(payload.message || 'Không thể xác thực.', response.status, payload)
-    setSession({ user: payload.user, accessToken: payload.accessToken, refreshToken: payload.refreshToken })
-    return payload
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS)
+    try {
+      const response = await fetch(`${API_URL}/auth/${mode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(credentials),
+        signal: controller.signal,
+      })
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) throw new ApiError(payload.message || 'Không thể xác thực.', response.status, payload)
+      setSession({ user: payload.user, accessToken: payload.accessToken, refreshToken: payload.refreshToken })
+      return payload
+    } catch (error) {
+      if (error.name === 'AbortError') throw new ApiError('Đăng nhập quá thời gian chờ. Vui lòng thử lại.', 408, { code: 'AUTH_TIMEOUT' })
+      throw error
+    } finally {
+      window.clearTimeout(timeout)
+    }
   }, [setSession])
 
   const logout = useCallback(async () => {

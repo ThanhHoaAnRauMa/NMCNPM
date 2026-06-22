@@ -39,7 +39,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 
 | Flow | Status |
 | --- | --- |
-| Register with password confirmation, username/email login, refresh, logout, temporary account lock | Implemented |
+| Register with password confirmation, case-insensitive username/email login, refresh, logout, temporary account lock | Implemented |
 | Local device identity and public-key publication | Implemented |
 | User search, profile update, block/unblock | Implemented |
 | Mode-specific direct conversations and group administration | Implemented |

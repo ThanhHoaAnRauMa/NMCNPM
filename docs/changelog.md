@@ -26,6 +26,7 @@ Changed:
 
 Fixed:
 
+* Made username login case-insensitive and password-aware for legacy case-colliding accounts, blocked new case-only username duplicates, and bounded frontend authentication requests with a timeout.
 * Prevented healthy Gemini requests from unnecessarily entering the allow-on-provider-failure fallback under normal production network latency.
 * Deferred Cloudinary SDK configuration until request time so runtime environment variables are available before upload or deletion.
 * Replaced serif heading fallbacks with a cross-platform sans-serif stack that renders Vietnamese diacritics consistently.

@@ -6,6 +6,11 @@ const MAX_LOGIN_ATTEMPTS = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000;
 const PASSWORD_MIN_LENGTH = 8;
 
+function exactCaseInsensitive(value) {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^${escaped}$`, "i");
+}
+
 function publicUser(user) {
   return {
     id: user._id,
@@ -34,7 +39,9 @@ exports.register = async (req, res) => {
       return res.status(400).json({ success: false, message: "Password confirmation does not match.", code: "PASSWORD_MISMATCH" });
     }
 
-    const existing = await User.findOne({ $or: [{ email }, { username }] }).select("email username");
+    const existing = await User.findOne({
+      $or: [{ email }, { username: exactCaseInsensitive(username) }],
+    }).select("email username");
     if (existing) {
       const code = existing.email === email ? "EMAIL_ALREADY_EXISTS" : "USERNAME_ALREADY_EXISTS";
       return res.status(409).json({ success: false, message: "Email or username already exists.", code });
@@ -62,20 +69,39 @@ exports.login = async (req, res) => {
       return res.status(400).json({ success: false, message: "Username or email and password are required.", code: "MISSING_FIELDS" });
     }
 
-    const lookup = identifier.includes("@")
-      ? { email: identifier.toLowerCase() }
-      : { username: identifier };
-    const user = await User.findOne(lookup).select("+password");
-    if (user?.isLocked()) {
-      return res.status(423).json({ success: false, message: "Account is temporarily locked.", code: "ACCOUNT_LOCKED", lockUntil: user.lockUntil });
+    const usernameLogin = !identifier.includes("@");
+    const candidates = usernameLogin
+      ? await User.find({ username: exactCaseInsensitive(identifier) }).select("+password").limit(10)
+      : [await User.findOne({ email: identifier.toLowerCase() }).select("+password")].filter(Boolean);
+    const exactCandidate = usernameLogin
+      ? candidates.find((candidate) => candidate.username === identifier)
+      : candidates[0];
+    const orderedCandidates = exactCandidate
+      ? [exactCandidate, ...candidates.filter((candidate) => candidate._id.toString() !== exactCandidate._id.toString())]
+      : candidates;
+
+    let user = null;
+    let lockedMatch = null;
+    for (const candidate of orderedCandidates) {
+      if (await bcrypt.compare(password, candidate.password)) {
+        if (candidate.isLocked()) lockedMatch = candidate;
+        else {
+          user = candidate;
+          break;
+        }
+      }
     }
 
-    const valid = user ? await bcrypt.compare(password, user.password) : false;
-    if (!valid) {
-      if (user) {
-        const loginAttempts = (user.loginAttempts || 0) + 1;
+    if (!user) {
+      if (lockedMatch || exactCandidate?.isLocked()) {
+        const lockedUser = lockedMatch || exactCandidate;
+        return res.status(423).json({ success: false, message: "Account is temporarily locked.", code: "ACCOUNT_LOCKED", lockUntil: lockedUser.lockUntil });
+      }
+      const failedCandidate = exactCandidate || (candidates.length === 1 ? candidates[0] : null);
+      if (failedCandidate) {
+        const loginAttempts = (failedCandidate.loginAttempts || 0) + 1;
         const lockUntil = loginAttempts >= MAX_LOGIN_ATTEMPTS ? new Date(Date.now() + LOCK_DURATION_MS) : null;
-        await User.findByIdAndUpdate(user._id, { loginAttempts, lockUntil });
+        await User.findByIdAndUpdate(failedCandidate._id, { loginAttempts, lockUntil });
         if (lockUntil) {
           return res.status(423).json({ success: false, message: "Account is temporarily locked.", code: "ACCOUNT_LOCKED", lockUntil });
         }
