@@ -16,8 +16,8 @@ The handshake JWT determines `socket.userId`. Emitting `user_online` cannot chan
 | --- | --- | --- |
 | `join_conversation` / `join` | `{ conversationId }` | Membership check, then join room |
 | `leave_conversation` / `leave` | `{ conversationId }` | Leave room |
-| `send_message` | `{ conversationId, encryptedContent, signature, msgType?, replyTo?, tempId? }` | Validate membership, join sender room, then persist and broadcast KYC-mode ciphertext |
-| `send_private_message` | `{ conversationId, encryptedContent, signature, tempId }` | Relay Privacy-mode ciphertext without persistence |
+| `send_message` | `{ conversationId, encryptedContent, signature, msgType?, replyTo?, tempId? }` | Validate membership/current sender key, join room, then persist and broadcast KYC-mode ciphertext |
+| `send_private_message` | `{ conversationId, encryptedContent, signature, tempId }` | Validate the current sender key, then relay Privacy-mode ciphertext without persistence |
 | `ack_private_message` | `{ tempId }` | Clear relay tracking after two participant ACKs |
 | `mark_seen` | `{ messageId, conversationId }` | Member-only seen update |
 | `typing` / `stop_typing` | `{ conversationId }` | Relay only after authorized room join |
@@ -32,12 +32,13 @@ After membership validation, `send_message` ensures the sender socket has joined
 
 | Event | Important Fields |
 | --- | --- |
-| `new_message` | `_id`, `conversationId`, `senderId`, encrypted payload/signature, type/status/timestamps, `tempId` |
-| `new_private_message` | `tempId`, conversation/sender ids, encrypted payload/signature, `createdAt` |
+| `new_message` | `_id`, `conversationId`, `senderId`, encrypted payload/signature, `senderPublicKey`, type/status/timestamps, `tempId` |
+| `new_private_message` | `tempId`, conversation/sender ids, encrypted payload/signature, `senderPublicKey`, `createdAt` |
 | `private_message_sent` | `tempId` |
 | `message_status` | `messageId`, `SENT | DELIVERED | SEEN`, `seenBy?` |
 | `user_typing` / `user_stop_typing` | `userId`, `conversationId` |
 | `user_status` | `userId`, `isOnline`, `lastSeen?`, `reason?` |
+| `user_key_updated` | `userId`; tells conversation participants to refresh member public keys |
 | `missed_messages` | `conversationId`, `messages`, `count` |
 | `socket_error` | `event`, `code`, `message`, optional `tempId` |
 
@@ -52,6 +53,7 @@ After membership validation, `send_message` ensures the sender socket has joined
 | `BLOCKED_BY_RECEIVER` | Recipient blocked sender |
 | `MESSAGE_TOO_LARGE` | Encrypted envelope exceeds limit |
 | `SIGNATURE_TOO_LARGE` | Signature exceeds 16 KiB |
+| `KEY_MISMATCH` | Signature does not match the account's current public key; restore or explicitly synchronize the device identity |
 | `DUPLICATE_MESSAGE` | Reused sender/temp id |
 | `MESSAGE_NOT_FOUND` | Seen target missing |
 | `INVALID_REQUEST`, `SERVER_ERROR` | Invalid recovery request or internal failure |

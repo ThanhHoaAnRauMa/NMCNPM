@@ -33,7 +33,7 @@ flowchart LR
   Socket --> Mongo
 ```
 
-The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-GCM encrypted; the AES key is wrapped for each conversation member. Only public key bundles are uploaded. KYC mode persists ciphertext; Privacy mode relays ciphertext without creating a `Message` record.
+The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-GCM encrypted; the AES key is wrapped for each conversation member. Only public key bundles are uploaded. The client detects local/server key mismatch and the backend rejects stale signatures. KYC mode persists ciphertext plus a sender-key snapshot; Privacy mode relays ciphertext without creating a `Message` record.
 
 ## Implemented User Flows
 
@@ -72,7 +72,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | --- | --- |
 | KYC | External identity/document provider is not integrated; reviewer IDs require operator configuration |
 | Forensics | No unattended periodic root worker; wallet approval is required to avoid a server custody key |
-| Multi-device crypto | Encrypted manual recovery exists; no automatic trusted-device transfer or key history |
+| Multi-device crypto | Local/server mismatch detection and encrypted manual recovery exist; no automatic trusted-device transfer, and legacy messages have no key snapshots |
 | Privacy mode | Ephemeral delivery has no offline recovery by design |
 | Attachments | Production Cloudinary is configured; local and future environments still require credentials and browser access to encrypted blobs |
 | Deployment | API, frontend, Atlas, Gemini, Cloudinary, Sepolia proxy, KYC reviewer allowlist, and GitHub-to-Render deploy secrets are configured |

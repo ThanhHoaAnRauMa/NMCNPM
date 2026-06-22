@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { webcrypto } from 'node:crypto'
 import { createRequire } from 'node:module'
 import test from 'node:test'
 
@@ -9,6 +10,12 @@ const User = require('../../src/backend/src/models/User.model.js')
 const registerChatSocket = require('../../src/backend/src/socket/chat.socket.js')
 
 test('persisted send joins creator before broadcasting when explicit join is still pending', async () => {
+  const encryptedContent = 'ciphertext'
+  const signingPair = await webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+  const signing = await webcrypto.subtle.exportKey('jwk', signingPair.publicKey)
+  const signatureBytes = await webcrypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, signingPair.privateKey, new TextEncoder().encode(encryptedContent))
+  const signature = Buffer.from(signatureBytes).toString('base64')
+  const publicKey = JSON.stringify({ v: 1, encryption: { kty: 'RSA' }, signing })
   const originals = {
     conversationExists: Conversation.exists,
     conversationFindOne: Conversation.findOne,
@@ -20,6 +27,7 @@ test('persisted send joins creator before broadcasting when explicit join is sti
   const handlers = new Map()
   const rooms = new Set()
   const broadcasts = []
+  const socketEvents = []
   let connectionHandler
 
   try {
@@ -41,7 +49,7 @@ test('persisted send joins creator before broadcasting when explicit join is sti
       createdAt: new Date(),
       async save() {},
     })
-    User.findById = () => ({ select: async () => ({ blocklist: [] }) })
+    User.findById = () => ({ select: async (fields) => fields === 'publicKey' ? { publicKey } : { blocklist: [] } })
     User.findByIdAndUpdate = async () => null
 
     const io = {
@@ -61,7 +69,9 @@ test('persisted send joins creator before broadcasting when explicit join is sti
       id: 'socket-creator',
       userId: 'creator',
       broadcast: { emit() {} },
-      emit() {},
+      emit(event, payload) {
+        socketEvents.push({ event, payload })
+      },
       on(event, handler) {
         handlers.set(event, handler)
       },
@@ -81,8 +91,8 @@ test('persisted send joins creator before broadcasting when explicit join is sti
     const joinPromise = handlers.get('join_conversation')({ conversationId: 'conversation-1' })
     const sendPromise = handlers.get('send_message')({
       conversationId: 'conversation-1',
-      encryptedContent: 'ciphertext',
-      signature: 'signature',
+      encryptedContent,
+      signature,
       tempId: 'temp-1',
     })
     await Promise.all([joinPromise, sendPromise])
@@ -91,6 +101,17 @@ test('persisted send joins creator before broadcasting when explicit join is sti
     assert.ok(newMessage)
     assert.equal(newMessage.senderWasJoined, true)
     assert.equal(newMessage.payload.tempId, 'temp-1')
+    assert.equal(newMessage.payload.senderPublicKey, publicKey)
+
+    const acceptedCount = broadcasts.filter((entry) => entry.event === 'new_message').length
+    await handlers.get('send_message')({
+      conversationId: 'conversation-1',
+      encryptedContent,
+      signature: `${signature.slice(0, -4)}AAAA`,
+      tempId: 'temp-stale-key',
+    })
+    assert.equal(broadcasts.filter((entry) => entry.event === 'new_message').length, acceptedCount)
+    assert.equal(socketEvents.find((entry) => entry.payload?.tempId === 'temp-stale-key')?.payload.code, 'KEY_MISMATCH')
   } finally {
     Conversation.exists = originals.conversationExists
     Conversation.findOne = originals.conversationFindOne

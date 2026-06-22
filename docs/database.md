@@ -71,6 +71,7 @@ Indexes:
 | `conversationId` | ObjectId -> `Conversation` | Yes | Conversation reference |
 | `encryptedContent` | String | Yes | Ciphertext only |
 | `signature` | String | Yes | Sender signature metadata |
+| `senderPublicKey` | String | No | Verified sender public-key snapshot for rotation-safe signature checks on new records |
 | `timestamp` | Date | Yes | Defaults to `Date.now` |
 | `contentHash` | String | No | SHA-256 hex; auto-derived from `encryptedContent` if missing |
 | `clientMessageId` | String | No | Idempotency key |

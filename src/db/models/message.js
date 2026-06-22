@@ -11,6 +11,7 @@ const MessageSchema = new mongoose.Schema(
     },
     encryptedContent: { type: String, required: true },
     signature: { type: String, required: true, maxlength: 16384 },
+    senderPublicKey: { type: String, maxlength: 16384, default: null },
     timestamp: { type: Date, default: Date.now, required: true },
     contentHash: { type: String, match: /^[a-f0-9]{64}$/i },
     // Optional client id lets the chat service reject retries without storing plaintext.
