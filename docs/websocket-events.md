@@ -16,7 +16,7 @@ The handshake JWT determines `socket.userId`. Emitting `user_online` cannot chan
 | --- | --- | --- |
 | `join_conversation` / `join` | `{ conversationId }` | Membership check, then join room |
 | `leave_conversation` / `leave` | `{ conversationId }` | Leave room |
-| `send_message` | `{ conversationId, encryptedContent, signature, msgType?, replyTo?, tempId? }` | Persist KYC-mode ciphertext |
+| `send_message` | `{ conversationId, encryptedContent, signature, msgType?, replyTo?, tempId? }` | Validate membership, join sender room, then persist and broadcast KYC-mode ciphertext |
 | `send_private_message` | `{ conversationId, encryptedContent, signature, tempId }` | Relay Privacy-mode ciphertext without persistence |
 | `ack_private_message` | `{ tempId }` | Clear relay tracking after two participant ACKs |
 | `mark_seen` | `{ messageId, conversationId }` | Member-only seen update |
@@ -25,6 +25,8 @@ The handshake JWT determines `socket.userId`. Emitting `user_online` cannot chan
 | `user_online` | None needed | Compatibility status echo only; does not authenticate |
 
 `encryptedContent` is capped at 100,000 characters. `tempId` participates in sender-side duplicate protection for persisted messages.
+
+After membership validation, `send_message` ensures the sender socket has joined the conversation room before broadcasting `new_message`. This keeps an immediately sent first message visible to the creator even when the earlier `join_conversation` handler is still completing.
 
 ## Server to Client
 
