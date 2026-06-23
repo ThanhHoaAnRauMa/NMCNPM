@@ -2,10 +2,21 @@
 
 ## 2026-06-23
 
+Added:
+
+* KYC verified account badge in profile, user search, direct conversation titles, chat headers, message sender labels, and local message-search results.
+
+Changed:
+
+* Message and file history sender payloads now include `kycStatus` so clients can render verified-account indicators consistently.
+* KYC reviewer authorization now uses `KYC_REVIEWER_EMAILS` instead of MongoDB user ids.
+
 Fixed:
 
 * Allowed login when a username contains `@` or is entered as `@username` by resolving both username and email candidates before password verification.
 * Increased the frontend authentication timeout to 60 seconds so a Render cold start cannot leave login appearing permanently pending.
+* Kept the KYC submit button clickable when the device key is not ready so users receive actionable create/restore/sync guidance instead of a silent disabled cursor.
+* Added an inline KYC submission status message and state-specific submit button text after users send a KYC profile.
 
 ## 2026-06-22
 

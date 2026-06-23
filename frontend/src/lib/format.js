@@ -6,10 +6,20 @@ export function displayName(user) {
   return user?.displayName || user?.username || 'Nguoi dung'
 }
 
+export function isKycVerified(user) {
+  const status = typeof user === 'string' ? user : user?.kycStatus
+  return String(status || '').toUpperCase() === 'VERIFIED'
+}
+
+export function conversationPeer(conversation, currentUserId) {
+  if (!conversation || ['GROUP', 'group'].includes(conversation.type)) return null
+  return conversation.members?.find((member) => userId(member) !== currentUserId) || null
+}
+
 export function conversationTitle(conversation, currentUserId) {
   if (!conversation) return 'Chon mot cuoc tro chuyen'
   if (['GROUP', 'group'].includes(conversation.type)) return conversation.groupName || conversation.name || 'Nhom khong ten'
-  const other = conversation.members?.find((member) => userId(member) !== currentUserId)
+  const other = conversationPeer(conversation, currentUserId)
   return displayName(other)
 }
 

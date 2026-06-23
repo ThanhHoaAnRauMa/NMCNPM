@@ -59,6 +59,8 @@ Registration compatibility note: clients must send `confirmPassword`. Older regi
 | GET | `/chat/:conversationId/messages?before=&limit=&includeHidden=` | Limit 1-100 | Cursor history; membership required; `includeHidden=true` restores sender-hidden records for evidence export |
 | DELETE | `/chat/messages/:messageId` | None | Sender-only local-hide flag; does not delete forensic record |
 
+Public user summaries returned by profile, user search, conversation membership, message history, and file history include `kycStatus`. Clients should render a verified-account indicator only when `kycStatus` is `VERIFIED`.
+
 ## Groups
 
 | Method | Path | Body | Purpose |
@@ -105,7 +107,7 @@ The upload signature must match the sender's current account public key. A stale
 
 Submission fields are `fullName`, `citizenId` (12 digits), `dateOfBirth`, `address`, `documentFront`, `documentBack`, `hash`, `signature`, and `pubkey`. Images must be JPEG, PNG, or WebP. The client signs a canonical payload containing the identity fields and SHA-256 of both images; the backend recomputes it and verifies the current device key before private upload.
 
-Reviewer access is controlled by `KYC_REVIEWER_USER_IDS`. The queue returns signed delivery URLs for authenticated Cloudinary images. Reviewers cannot decide their own submission. Rejection deletes both images while retaining hash/audit metadata; the user may then submit replacements. External OCR/eKYC validation remains **Not Implemented**. `403 KYC_REQUIRED` means one or more participants are not verified for KYC-mode conversation creation/membership.
+Reviewer access is controlled by `KYC_REVIEWER_EMAILS`, a comma-separated list matched against the authenticated account email. The queue returns signed delivery URLs for authenticated Cloudinary images. Reviewers cannot decide their own submission. Rejection deletes both images while retaining hash/audit metadata; the user may then submit replacements. External OCR/eKYC validation remains **Not Implemented**. `403 KYC_REQUIRED` means one or more participants are not verified for KYC-mode conversation creation/membership.
 
 ## Temporary Message Search
 

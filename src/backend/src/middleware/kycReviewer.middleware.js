@@ -1,18 +1,28 @@
-const mongoose = require("../utils/mongoose");
+const User = require("../models/User.model");
 
-function reviewerIds() {
+function reviewerEmails() {
   return new Set(
-    (process.env.KYC_REVIEWER_USER_IDS || "")
+    (process.env.KYC_REVIEWER_EMAILS || "")
       .split(",")
-      .map((value) => value.trim())
-      .filter((value) => mongoose.isValidObjectId(value))
-      .map((value) => String(value)),
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
   );
 }
 
-exports.requireKycReviewer = (req, res, next) => {
-  if (!reviewerIds().has(String(req.userId))) {
+exports.requireKycReviewer = async (req, res, next) => {
+  try {
+    const allowedEmails = reviewerEmails();
+    if (!allowedEmails.size) {
+      return res.status(403).json({ success: false, message: "KYC reviewer access is required." });
+    }
+
+    const user = await User.findById(req.userId).select("email").lean();
+    if (!user || !allowedEmails.has(String(user.email || "").toLowerCase())) {
+      return res.status(403).json({ success: false, message: "KYC reviewer access is required." });
+    }
+    return next();
+  } catch (error) {
+    console.error("[requireKycReviewer]", error);
     return res.status(403).json({ success: false, message: "KYC reviewer access is required." });
   }
-  return next();
 };

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import KycBadge from './KycBadge.jsx'
 import { decryptFile, decryptText, encryptFile, encryptText, verifyPayload } from '../lib/crypto.js'
-import { conversationTitle, displayName, fileSize, shortTime, userId } from '../lib/format.js'
+import { conversationPeer, conversationTitle, displayName, fileSize, shortTime, userId } from '../lib/format.js'
 import { containsSubstring, fetchAllConversationMessages, highlightSubstring } from '../lib/localMessageSearch.js'
 
 function uniqueMessages(messages) {
@@ -294,12 +295,19 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
   }
 
   const otherTyping = typingUsers.map((id) => displayName(memberById.get(id))).join(', ')
+  const peer = conversationPeer(conversation, currentUserId)
 
   return (
     <div className="flex h-full min-h-0">
       <section className="flex min-w-0 flex-1 flex-col">
         <header className="flex min-h-20 items-center justify-between gap-4 border-b border-line px-5 py-4 sm:px-7">
-          <div className="min-w-0"><h2 className="truncate text-lg font-bold">{conversationTitle(conversation, currentUserId)}</h2><p className="mt-1 text-[11px] text-slate-500">{members.length} thành viên · <span className={isPrivacy ? 'text-amber' : 'text-mint'}>{isPrivacy ? 'Privacy / ephemeral' : 'KYC / persisted ciphertext'}</span></p></div>
+          <div className="min-w-0">
+            <h2 className="flex min-w-0 items-center gap-1.5 text-lg font-bold">
+              <span className="truncate">{conversationTitle(conversation, currentUserId)}</span>
+              <KycBadge user={peer} />
+            </h2>
+            <p className="mt-1 text-[11px] text-slate-500">{members.length} thành viên · <span className={isPrivacy ? 'text-amber' : 'text-mint'}>{isPrivacy ? 'Privacy / ephemeral' : 'KYC / persisted ciphertext'}</span></p>
+          </div>
           <div className="flex shrink-0 gap-2">
             <button className="btn-secondary" onClick={() => setPanel(panel === 'search' ? null : 'search')}>Tìm kiếm</button>
             <button className="btn-secondary" disabled={isPrivacy} onClick={summarize}>AI tóm tắt</button>
@@ -316,7 +324,12 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
             return (
               <article className={`flex rounded-2xl transition ${focusedMessageId === String(message._id || message.tempId) ? 'ring-2 ring-amber/70 ring-offset-4 ring-offset-ink' : ''} ${mine ? 'justify-end' : 'justify-start'}`} id={`message-${String(message._id || message.tempId)}`} key={String(message._id || message.tempId)}>
                 <div className={`max-w-[82%] rounded-2xl border px-4 py-3 sm:max-w-[68%] ${mine ? 'border-mint/20 bg-mint/10' : 'border-line bg-white/[.035]'}`}>
-                  {!mine && <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-amber">{displayName(message.senderId)}</p>}
+                  {!mine && (
+                    <p className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber">
+                      <span>{displayName(message.senderId)}</span>
+                      <KycBadge className="h-3.5 w-3.5" user={message.senderId} />
+                    </p>
+                  )}
                   {message.msgType === 'FILE' ? (
                     <button className="flex w-full items-center gap-3 text-left" onClick={() => openFile(message)}>
                       <span className="grid h-10 w-10 place-items-center rounded-xl bg-ink text-[10px] font-bold text-mint">FILE</span>
@@ -357,7 +370,13 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
               {!searchLoading && searchStats && searchResults.length === 0 && <p className="mt-8 text-center text-sm text-slate-500">Không tìm thấy tin nhắn chứa “{searchedKeyword}”.</p>}
               <div className="mt-5 space-y-3">{searchResults.map((result) => (
                 <button className="w-full rounded-xl border border-line bg-ink/50 p-3 text-left transition hover:border-mint/40 hover:bg-white/[.04]" key={String(result._id || result.tempId)} onClick={() => jumpToSearchResult(result._id || result.tempId)} type="button">
-                  <span className="flex items-center justify-between gap-3"><strong className="truncate text-xs text-amber">{displayName(result.senderId)}</strong><small className="shrink-0 text-[10px] text-slate-600">{new Date(result.createdAt || result.timestamp).toLocaleString('vi-VN')}</small></span>
+                  <span className="flex items-center justify-between gap-3">
+                    <strong className="min-w-0 flex items-center gap-1.5 text-xs text-amber">
+                      <span className="truncate">{displayName(result.senderId)}</span>
+                      <KycBadge className="h-3.5 w-3.5" user={result.senderId} />
+                    </strong>
+                    <small className="shrink-0 text-[10px] text-slate-600">{new Date(result.createdAt || result.timestamp).toLocaleString('vi-VN')}</small>
+                  </span>
                   <span className="mt-2 block whitespace-pre-wrap break-words text-xs leading-5 text-slate-300"><HighlightedText keyword={searchedKeyword} value={result.text} /></span>
                 </button>
               ))}</div>

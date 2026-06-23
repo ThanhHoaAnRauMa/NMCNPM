@@ -46,7 +46,7 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 | `PORT`, `NODE_ENV`, `CORS_ORIGIN` | Production | API runtime and allowed frontend origin |
 | `JWT_SECRET`, `JWT_REFRESH_SECRET` | Yes | Use different random secrets, at least 32 chars |
 | `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` | No | Defaults `15m`, `7d` |
-| `KYC_REVIEWER_USER_IDS` | For KYC review | Comma-separated MongoDB user ObjectIds; keep empty to deny all reviewers |
+| `KYC_REVIEWER_EMAILS` | For KYC review | Comma-separated reviewer account emails; keep empty to deny all reviewers |
 | `GEMINI_API_KEY` | For AI | Gemini API key |
 | `GEMINI_MODEL`, `GEMINI_*_TIMEOUT_MS`, `AI_MAX_*` | No | AI model, limits, and timeouts; moderation defaults to 5 seconds and is capped at 10 seconds |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | For files | Encrypted blob storage |
