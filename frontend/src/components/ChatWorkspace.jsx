@@ -220,8 +220,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     setError('')
     try {
       ensureReady()
-      const moderation = await api.post('/ai/moderate', { text: plaintext })
-      if (moderation.moderation?.is_moderated === false) setError('AI moderation tạm thời không khả dụng; tin nhắn vẫn được gửi theo fallback policy.')
+      await api.post('/ai/moderate', { text: plaintext })
       const encrypted = await encryptText(plaintext, recipients, identity)
       const tempId = crypto.randomUUID()
       pendingPlaintext.current.set(tempId, plaintext)
@@ -343,7 +342,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     setError('')
     if (isPrivacy) {
       setPanel('summary')
-      setSummary({ summary: 'Privacy mode khong luu ciphertext trong Message DB, nen AI summary hien chi ho tro KYC/persisted conversations.', messageCount: 0, model: 'local-policy' })
+      setSummary({ summary: 'Tính năng AI tóm tắt không khả dụng khi sử dụng chế độ Privacy.', messageCount: 0, model: 'local-policy' })
       return
     }
     const source = messages.filter((message) => /^[a-f0-9]{24}$/i.test(String(message._id)) && message.decrypted && message.msgType !== 'FILE').slice(-100)

@@ -14,6 +14,9 @@ Changed:
 
 Fixed:
 
+* Removed the non-actionable AI moderation fallback warning from chat sends.
+* Replaced the disabled Privacy summary button with a visible explanation that AI summary is unavailable in Privacy mode.
+* Added an in-place KYC proof dialog for invalid KYC submissions so users do not need to scroll to the top of the profile page.
 * Used persisted MongoDB ObjectId ordering before timestamp fallback so KYC chat history renders consistently across participants.
 * Kept the AI summary button clickable in Privacy mode and showed an explicit local-policy explanation instead of a disabled control.
 * Kept chat message order stable with an id tie-breaker and server-confirmed Privacy timestamps.

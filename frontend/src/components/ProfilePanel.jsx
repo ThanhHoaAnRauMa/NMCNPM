@@ -11,6 +11,7 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
   const [reviewRecords, setReviewRecords] = useState(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  const [kycDialog, setKycDialog] = useState('')
   const [backupPassword, setBackupPassword] = useState('')
   const backupInput = useRef(null)
   const keyReady = Boolean(identity) && keyStatus === 'ready'
@@ -34,6 +35,11 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
     if (keyStatus === 'mismatch') return 'Khóa thiết bị không khớp tài khoản. Hãy restore backup hoặc đồng bộ khóa trong mục Device key trước khi gửi KYC.'
     if (keyStatus === 'error') return 'Không xác minh được trạng thái khóa thiết bị. Hãy tải lại trang hoặc đăng nhập lại.'
     return 'Khóa thiết bị phải khớp tài khoản trước khi gửi KYC.'
+  }
+
+  const showKycError = (message) => {
+    setError(message)
+    setKycDialog(message)
   }
 
   useEffect(() => {
@@ -61,10 +67,11 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
 
   const submitKyc = async () => {
     setError('')
-    if (kycReviewLocked) return setError(kycStatus === 'PENDING' ? 'Hồ sơ KYC đang chờ reviewer duyệt.' : 'Tài khoản đã xác minh KYC.')
-    if (!keyReady) return setError(kycKeyGuidance())
-    if (kycForm.fullName.trim().length < 2 || !/^\d{12}$/.test(kycForm.citizenId) || !kycForm.dateOfBirth || kycForm.address.trim().length < 5) return setError('Vui lòng nhập đầy đủ thông tin CCCD hợp lệ.')
-    if (!kycFiles.front || !kycFiles.back) return setError('Cần ảnh mặt trước và mặt sau CCCD.')
+    setKycDialog('')
+    if (kycReviewLocked) return showKycError(kycStatus === 'PENDING' ? 'Hồ sơ KYC đang chờ reviewer duyệt.' : 'Tài khoản đã xác minh KYC.')
+    if (!keyReady) return showKycError(kycKeyGuidance())
+    if (kycForm.fullName.trim().length < 2 || !/^\d{12}$/.test(kycForm.citizenId) || !kycForm.dateOfBirth || kycForm.address.trim().length < 5) return showKycError('Vui lòng nhập đầy đủ thông tin CCCD hợp lệ.')
+    if (!kycFiles.front || !kycFiles.back) return showKycError('Cần ảnh mặt trước và mặt sau CCCD.')
     try {
       const proof = await createKycDocumentProof(kycForm, kycFiles.front, kycFiles.back, identity)
       const formData = new FormData()
@@ -74,9 +81,10 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
       const payload = await api.upload('/kyc/submit', formData)
       setProfile((current) => ({ ...current, kycStatus: payload.kycRecord.status }))
       setNotice('Hồ sơ KYC đã gửi và đang chờ reviewer đối chiếu.')
+      setKycDialog('')
       setKycFiles({ front: null, back: null })
     } catch (requestError) {
-      setError(requestError.message)
+      showKycError(requestError.message)
     }
   }
 
@@ -147,6 +155,16 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">Quản lý thông tin hiển thị, khóa thiết bị và trạng thái xác minh. Máy chủ chỉ giữ public key.</p>
 
         {(error || notice) && <div className={`mt-6 rounded-xl border px-4 py-3 text-sm ${error ? 'border-red-400/30 bg-red-400/10 text-red-200' : 'border-mint/30 bg-mint/10 text-mint'}`}>{error || notice}</div>}
+        {kycDialog && (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+            <div className="w-full max-w-md rounded-2xl border border-red-400/30 bg-panel p-6 shadow-2xl">
+              <p className="eyebrow text-red-200">KYC proof</p>
+              <h3 className="mt-2 text-xl font-bold text-paper">Không thể gửi hồ sơ KYC</h3>
+              <p className="mt-3 text-sm leading-6 text-red-100">{kycDialog}</p>
+              <button className="btn-primary mt-5 w-full" onClick={() => setKycDialog('')} type="button">Đã hiểu</button>
+            </div>
+          </div>
+        )}
 
         <div className="mt-8 grid gap-5 lg:grid-cols-2">
           <form className="panel rounded-2xl p-6" onSubmit={save}>
