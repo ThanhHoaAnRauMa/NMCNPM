@@ -36,7 +36,7 @@ After a persisted message or encrypted file is stored, the server also emits `co
 | --- | --- |
 | `new_message` | `_id`, `conversationId`, `senderId`, encrypted payload/signature, `senderPublicKey`, type/status/timestamps, `tempId` |
 | `new_private_message` | `tempId`, conversation/sender ids, encrypted payload/signature, `senderPublicKey`, `createdAt` |
-| `private_message_sent` | `tempId` |
+| `private_message_sent` | `tempId`, `conversationId`, server `createdAt` |
 | `message_status` | `messageId`, `SENT | DELIVERED | SEEN`, `seenBy?` |
 | `user_typing` / `user_stop_typing` | `userId`, `conversationId` |
 | `user_status` | `userId`, `isOnline`, `lastSeen?`, `reason?` |

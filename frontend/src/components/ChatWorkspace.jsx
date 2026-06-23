@@ -23,7 +23,10 @@ function messageTime(message) {
 }
 
 function normalizeMessages(messages) {
-  return uniqueMessages(messages).sort((left, right) => messageTime(left) - messageTime(right))
+  return uniqueMessages(messages).sort((left, right) =>
+    messageTime(left) - messageTime(right) ||
+    String(left._id || left.tempId || '').localeCompare(String(right._id || right.tempId || '')),
+  )
 }
 
 function readMessageCache(cacheKey) {
@@ -40,7 +43,7 @@ function HighlightedText({ value = '', keyword = '' }) {
     : <span key={index}>{part.text}</span>)
 }
 
-export default function ChatWorkspace({ api, socket, conversation, currentUser, identity, keyStatus, onKeyMismatch }) {
+export default function ChatWorkspace({ api, socket, conversation, currentUser, identity, keyStatus, onConversationActivity, onKeyMismatch }) {
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
@@ -136,6 +139,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       const hydrated = await hydrateMessage(message)
       if (!active) return
       updateMessages((current) => uniqueMessages([...current.filter((item) => item.tempId !== message.tempId || item._id), hydrated]))
+      onConversationActivity?.(message.conversationId, hydrated)
       const plaintext = pendingPlaintext.current.get(message.tempId)
       if (plaintext) pendingPlaintext.current.delete(message.tempId)
     }
@@ -145,6 +149,14 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       socket.emit('ack_private_message', { tempId: message.tempId })
     }
     const onStatus = ({ messageId, status }) => updateMessages((current) => current.map((message) => String(message._id) === String(messageId) ? { ...message, status } : message))
+    const onPrivateSent = ({ tempId, conversationId, createdAt }) => {
+      if (String(conversationId) !== String(conversation._id)) return
+      updateMessages((current) => current.map((message) => {
+        if (String(message.tempId) !== String(tempId)) return message
+        return { ...message, createdAt: createdAt || message.createdAt, timestamp: createdAt || message.timestamp, status: 'SENT' }
+      }))
+      onConversationActivity?.(conversationId, { _id: tempId, tempId, conversationId, senderId: currentUser, msgType: 'TEXT', status: 'SENT', createdAt, timestamp: createdAt })
+    }
     const onTyping = ({ userId: typingUserId, conversationId }) => {
       if (String(conversationId) === String(conversation._id) && typingUserId !== currentUserId) setTypingUsers((current) => [...new Set([...current, typingUserId])])
     }
@@ -157,6 +169,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
 
     socket.on('new_message', onMessage)
     socket.on('new_private_message', onPrivateMessage)
+    socket.on('private_message_sent', onPrivateSent)
     socket.on('message_status', onStatus)
     socket.on('user_typing', onTyping)
     socket.on('user_stop_typing', onStopTyping)
@@ -167,6 +180,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       socket.emit('leave_conversation', { conversationId: conversation._id })
       socket.off('new_message', onMessage)
       socket.off('new_private_message', onPrivateMessage)
+      socket.off('private_message_sent', onPrivateSent)
       socket.off('message_status', onStatus)
       socket.off('user_typing', onTyping)
       socket.off('user_stop_typing', onStopTyping)
@@ -198,7 +212,9 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       pendingPlaintext.current.set(tempId, plaintext)
       const payload = { conversationId: conversation._id, ...encrypted, msgType: 'TEXT', tempId }
       if (isPrivacy) {
-        updateMessages((current) => [...current, { _id: tempId, tempId, conversationId: conversation._id, senderId: currentUser, text: plaintext, decrypted: true, verified: true, msgType: 'TEXT', status: 'SENT', createdAt: new Date().toISOString() }])
+        const optimisticAt = new Date().toISOString()
+        updateMessages((current) => [...current, { _id: tempId, tempId, conversationId: conversation._id, senderId: currentUser, text: plaintext, decrypted: true, verified: true, msgType: 'TEXT', status: 'SENT', createdAt: optimisticAt, timestamp: optimisticAt }])
+        onConversationActivity?.(conversation._id, { _id: tempId, tempId, conversationId: conversation._id, senderId: currentUser, msgType: 'TEXT', status: 'SENT', createdAt: optimisticAt, timestamp: optimisticAt })
         socket.emit('send_private_message', payload)
       } else {
         socket.emit('send_message', payload)

@@ -215,6 +215,7 @@ module.exports = function registerChatSocket(io) {
             return emitError("send_private_message", "BLOCKED_BY_RECEIVER", "The recipient has blocked this sender.", { tempId });
           }
         }
+        const createdAt = new Date().toISOString();
         socket.to(conversationId).emit("new_private_message", {
           tempId,
           conversationId,
@@ -222,14 +223,14 @@ module.exports = function registerChatSocket(io) {
           encryptedContent,
           signature,
           senderPublicKey: sender.publicKey,
-          createdAt: new Date().toISOString(),
+          createdAt,
         });
         pendingPrivacy.set(tempId, {
           conversationId,
           participants: new Set([socket.userId]),
           timer: setTimeout(() => pendingPrivacy.delete(tempId), 30000),
         });
-        socket.emit("private_message_sent", { tempId });
+        socket.emit("private_message_sent", { tempId, conversationId, createdAt });
       } catch (error) {
         console.error("[send_private_message]", error);
         emitError("send_private_message", "SERVER_ERROR", "Unable to relay privacy message.", { tempId });

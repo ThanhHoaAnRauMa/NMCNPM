@@ -14,6 +14,8 @@ Changed:
 
 Fixed:
 
+* Kept chat message order stable with an id tie-breaker and server-confirmed Privacy timestamps.
+* Updated the active conversation preview immediately from received/sent messages so the sidebar no longer stays at "Chưa có tin nhắn" while the message is visible in the chat.
 * Refreshed member conversation lists after persisted message/file sends by emitting `conversation_updated` to each member's user room, including members who have not opened the new group room yet.
 * Preserved hydrated chat messages in browser memory when switching conversations or leaving and returning from the profile/forensics tabs.
 * Allowed login when a username contains `@` or is entered as `@username` by resolving both username and email candidates before password verification.

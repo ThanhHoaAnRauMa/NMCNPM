@@ -12,6 +12,18 @@ import { generateIdentity } from './lib/crypto.js'
 import { identityStatus as resolveIdentityStatus } from './lib/identityStatus.js'
 import { loadIdentity, saveIdentity } from './lib/keyStore.js'
 
+function conversationActivityTime(conversation) {
+  const value = new Date(conversation?.lastMessage?.createdAt || conversation?.lastMessage?.timestamp || conversation?.updatedAt || conversation?.createdAt || 0).getTime()
+  return Number.isNaN(value) ? 0 : value
+}
+
+function normalizeConversations(conversations = []) {
+  return [...conversations].sort((left, right) =>
+    conversationActivityTime(right) - conversationActivityTime(left) ||
+    String(right._id).localeCompare(String(left._id)),
+  )
+}
+
 export default function App() {
   const auth = useSession()
   const [identity, setIdentity] = useState(null)
@@ -29,9 +41,10 @@ export default function App() {
     if (!auth.session) return
     try {
       const payload = await auth.api.get('/chat/conversations')
-      setConversations(payload.conversations)
+      const normalized = normalizeConversations(payload.conversations)
+      setConversations(normalized)
       if (preferredId) setSelectedId(String(preferredId))
-      else if (!selectedId && payload.conversations.length) setSelectedId(String(payload.conversations[0]._id))
+      else if (!selectedId && normalized.length) setSelectedId(String(normalized[0]._id))
     } catch (error) {
       setSystemError(error.message)
     }
@@ -70,7 +83,7 @@ export default function App() {
     const refreshFromRealtime = async () => {
       try {
         const payload = await auth.api.get('/chat/conversations')
-        setConversations(payload.conversations)
+        setConversations(normalizeConversations(payload.conversations))
       } catch (error) {
         setSystemError(error.message)
       }
@@ -136,6 +149,16 @@ export default function App() {
     setSystemError('Khóa thiết bị không còn khớp tài khoản. Tin nhắn chưa được gửi; mở Hồ sơ để restore hoặc đồng bộ khóa.')
   }
 
+  const handleConversationActivity = useCallback((conversationId, lastMessage) => {
+    if (!conversationId || !lastMessage) return
+    const activityAt = lastMessage.createdAt || lastMessage.timestamp || new Date().toISOString()
+    setConversations((current) => normalizeConversations(current.map((conversation) => (
+      String(conversation._id) === String(conversationId)
+        ? { ...conversation, lastMessage: { ...lastMessage, conversationId }, updatedAt: activityAt }
+        : conversation
+    ))))
+  }, [])
+
   const updateSessionUser = (user) => {
     auth.setSession({ ...auth.session, user: { ...auth.session.user, ...user, id: user.id || user._id } })
   }
@@ -180,7 +203,7 @@ export default function App() {
             </div>
           )}
           <div className="min-h-0 flex-1">
-            {view === 'chat' && <ChatWorkspace api={auth.api} conversation={selectedConversation} currentUser={auth.session.user} identity={identity} keyStatus={keyStatus} onKeyMismatch={handleKeyMismatch} socket={socket} />}
+            {view === 'chat' && <ChatWorkspace api={auth.api} conversation={selectedConversation} currentUser={auth.session.user} identity={identity} keyStatus={keyStatus} onConversationActivity={handleConversationActivity} onKeyMismatch={handleKeyMismatch} socket={socket} />}
             {view === 'profile' && <ProfilePanel api={auth.api} identity={identity} keyStatus={keyStatus} onCreateIdentity={createDeviceIdentity} onProfileChanged={updateSessionUser} onRestoreIdentity={restoreDeviceIdentity} onSynchronizeIdentity={synchronizeDeviceIdentity} userId={currentUserId} />}
             {view === 'forensics' && <ForensicsPanel api={auth.api} conversations={conversations} currentUser={auth.session.user} identity={identity} />}
           </div>
