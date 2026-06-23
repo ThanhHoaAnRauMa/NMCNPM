@@ -98,7 +98,7 @@ ConversationSchema.index({ members: 1, deletedFor: 1, updatedAt: -1 });
 ConversationSchema.index({ type: 1, members: 1 });
 ConversationSchema.index({ type: 1, mode: 1, members: 1 });
 ConversationSchema.index({ roomId: 1 }, { unique: true, sparse: true });
-ConversationSchema.index({ directKey: 1 }, { unique: true, sparse: true });
+ConversationSchema.index({ directKey: 1 }, { sparse: true });
 
 const Conversation = mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
 
