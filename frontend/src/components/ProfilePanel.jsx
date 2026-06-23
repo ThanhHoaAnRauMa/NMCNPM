@@ -221,7 +221,16 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
           {reviewRecords && <section className="panel rounded-2xl p-6 lg:col-span-2">
             <p className="eyebrow">Reviewer queue</p><h3 className="mt-2 text-xl font-bold">Hồ sơ KYC chờ duyệt</h3>
             <div className="mt-5 space-y-4">{reviewRecords.length === 0 ? <p className="text-sm text-slate-500">Không có hồ sơ đang chờ.</p> : reviewRecords.map((record) => <article className="rounded-xl border border-line p-4" key={record._id}>
-              <div className="grid gap-2 text-sm sm:grid-cols-2"><strong>{record.fullName || 'Legacy proof'}</strong><span>{record.citizenId || 'Không có số CCCD'}</span><span>{record.dateOfBirth ? new Date(record.dateOfBirth).toLocaleDateString('vi-VN') : ''}</span><span>{record.address}</span></div>
+              <div className="rounded-xl border border-mint/20 bg-mint/5 p-3 text-xs leading-5 text-slate-300">
+                <p className="font-bold uppercase tracking-wider text-mint">Tài khoản gửi</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <span><strong className="text-paper">Email:</strong> {record.userId?.email || 'Không có email'}</span>
+                  <span><strong className="text-paper">Username:</strong> @{record.userId?.username || 'unknown'}</span>
+                  <span><strong className="text-paper">Tên hiển thị:</strong> {record.userId?.displayName || 'Chưa đặt'}</span>
+                  <span><strong className="text-paper">Trạng thái:</strong> {record.userId?.kycStatus || 'UNKNOWN'}</span>
+                </div>
+              </div>
+              <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2"><strong>{record.fullName || 'Legacy proof'}</strong><span>{record.citizenId || 'Không có số CCCD'}</span><span>{record.dateOfBirth ? new Date(record.dateOfBirth).toLocaleDateString('vi-VN') : ''}</span><span>{record.address}</span></div>
               {record.documents ? <div className="mt-4 grid gap-3 sm:grid-cols-2"><a href={record.documents.frontUrl} rel="noreferrer" target="_blank"><img alt="CCCD mặt trước" className="max-h-64 w-full rounded-lg object-contain" src={record.documents.frontUrl} /></a><a href={record.documents.backUrl} rel="noreferrer" target="_blank"><img alt="CCCD mặt sau" className="max-h-64 w-full rounded-lg object-contain" src={record.documents.backUrl} /></a></div> : <p className="mt-3 text-xs text-amber">Legacy proof không có ảnh; nên từ chối và yêu cầu gửi lại.</p>}
               <div className="mt-4 flex gap-2"><button className="btn-primary" disabled={!record.documents} onClick={() => reviewKyc(record._id, 'VERIFIED')}>Duyệt</button><button className="btn-secondary" onClick={() => reviewKyc(record._id, 'REJECTED')}>Từ chối</button></div>
             </article>)}</div>

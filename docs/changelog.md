@@ -5,6 +5,7 @@
 Added:
 
 * KYC verified account badge in profile, user search, direct conversation titles, chat headers, message sender labels, and local message-search results.
+* Submitter email, username, display name, and current KYC status in the reviewer queue cards.
 
 Changed:
 
