@@ -1,7 +1,7 @@
 const mongoose = require("../utils/mongoose");
 const Conversation = require("../models/Conversation.model");
 const User = require("../models/User.model");
-const { conversationRoomId, directConversationKey } = require("../models/Conversation.model");
+const { conversationRoomId } = require("../models/Conversation.model");
 
 function validId(value) {
   return mongoose.Types.ObjectId.isValid(value);
@@ -141,43 +141,25 @@ exports.startDirectConversation = async (req, res) => {
       }
     }
 
-    const directKey = directConversationKey(req.userId, otherId, mode);
     let conversation = await Conversation.findOne({
-      $or: [
-        { directKey },
-        {
-          type: { $in: ["DIRECT", "direct"] },
-          mode: { $in: compatibleModes },
-          members: { $all: [req.userId, otherId], $size: 2 },
-        },
-      ],
+      type: { $in: ["DIRECT", "direct"] },
+      mode: { $in: compatibleModes },
+      members: { $all: [req.userId, otherId], $size: 2 },
     }).sort({ createdAt: 1 });
     let isNew = false;
     if (!conversation) {
-      let createdInThisRequest = false;
-      try {
-        conversation = await Conversation.create({ type: "DIRECT", mode, directKey, members: [req.userId, otherId] });
-        createdInThisRequest = true;
-      } catch (createError) {
-        if (createError?.code !== 11000) throw createError;
-        conversation = await Conversation.findOne({ directKey });
-        if (!conversation) throw createError;
-      }
-      isNew = createdInThisRequest;
-      if (createdInThisRequest) {
-        req.app.get("io")?.to(`user:${otherId}`).emit("conversation_created", {
-          conversationId: conversation._id,
-          roomId: conversation.roomId || conversationRoomId(conversation._id),
-          type: conversation.type,
-          mode: conversation.mode,
-          createdBy: req.userId,
-        });
-      }
+      conversation = await Conversation.create({ type: "DIRECT", mode, members: [req.userId, otherId] });
+      isNew = true;
+      req.app.get("io")?.to(`user:${otherId}`).emit("conversation_created", {
+        conversationId: conversation._id,
+        roomId: conversation.roomId || conversationRoomId(conversation._id),
+        type: conversation.type,
+        mode: conversation.mode,
+        createdBy: req.userId,
+      });
     }
     if (!isNew) {
-      const update = { $pull: { archivedFor: req.userId, deletedFor: req.userId } };
-      if (!conversation.directKey && directKey) update.$set = { directKey };
-      await Conversation.updateOne({ _id: conversation._id }, update);
+      await Conversation.updateOne({ _id: conversation._id }, { $pull: { archivedFor: req.userId, deletedFor: req.userId } });
       conversation = await Conversation.findById(conversation._id);
     }
     const publicOtherUser = otherUser.toObject();
