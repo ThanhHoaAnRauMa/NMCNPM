@@ -123,7 +123,7 @@ exports.getFilesByConversation = async (req, res) => {
     const files = await Message.find(query)
       .sort({ _id: -1 })
       .limit(limit)
-      .populate("senderId", "username displayName avatarUrl publicKey")
+      .populate("senderId", "username displayName avatarUrl kycStatus publicKey")
       .select("encryptedContent signature senderPublicKey fileUrl fileName fileMime fileSizeBytes senderId timestamp createdAt")
       .lean();
     const nextCursor = files.length === limit ? files[files.length - 1]._id : null;

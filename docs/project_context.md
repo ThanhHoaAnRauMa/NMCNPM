@@ -51,6 +51,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Gemini moderation before encryption | Implemented with allow-on-provider-failure policy |
 | Gemini conversation summary | Explicit client-supplied plaintext, human sender labels, versioned cache, and truncated-response rejection implemented |
 | Manual KYC review | Signed CCCD fields/images, private upload, allowlisted review, resubmission, and KYC-mode enforcement implemented |
+| KYC verified account badge | Implemented in profile, user search, conversation list, chat header, message sender labels, and local search results when `kycStatus` is `VERIFIED` |
 | Device-key recovery | Password-encrypted local export/import implemented; no server key custody |
 | Forensic evidence | Local transcript package, Merkle proof/signature verification, room/root wallet actions implemented |
 

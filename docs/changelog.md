@@ -2,6 +2,14 @@
 
 ## 2026-06-23
 
+Added:
+
+* KYC verified account badge in profile, user search, direct conversation titles, chat headers, message sender labels, and local message-search results.
+
+Changed:
+
+* Message and file history sender payloads now include `kycStatus` so clients can render verified-account indicators consistently.
+
 Fixed:
 
 * Allowed login when a username contains `@` or is entered as `@username` by resolving both username and email candidates before password verification.

@@ -50,7 +50,7 @@ exports.getMessages = async (req, res) => {
     const messages = await Message.find(query)
       .sort({ _id: -1 })
       .limit(limit)
-      .populate("senderId", "username displayName avatarUrl publicKey")
+      .populate("senderId", "username displayName avatarUrl kycStatus publicKey")
       .lean();
 
     const nextCursor = messages.length === limit ? messages[messages.length - 1]._id : null;

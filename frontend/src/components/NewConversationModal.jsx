@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import KycBadge from './KycBadge.jsx'
 import Modal from './Modal.jsx'
 import { displayName, userId } from '../lib/format.js'
 
@@ -73,7 +74,13 @@ export default function NewConversationModal({ api, onClose, onCreated }) {
           const active = selected.some((item) => userId(item) === userId(user))
           return (
             <button className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${active ? 'border-mint bg-mint/10' : 'border-line bg-white/[.025]'}`} key={userId(user)} onClick={() => toggle(user)}>
-              <span><strong className="block text-sm">{displayName(user)}</strong><small className="text-slate-500">@{user.username} · {user.kycStatus}</small></span>
+              <span className="min-w-0">
+                <strong className="flex items-center gap-1.5 text-sm">
+                  <span className="truncate">{displayName(user)}</span>
+                  <KycBadge user={user} />
+                </strong>
+                <small className="text-slate-500">@{user.username} · {user.kycStatus}</small>
+              </span>
               <span className={active ? 'text-mint' : 'text-slate-600'}>{active ? 'Đã chọn' : 'Chọn'}</span>
             </button>
           )

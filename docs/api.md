@@ -59,6 +59,8 @@ Registration compatibility note: clients must send `confirmPassword`. Older regi
 | GET | `/chat/:conversationId/messages?before=&limit=&includeHidden=` | Limit 1-100 | Cursor history; membership required; `includeHidden=true` restores sender-hidden records for evidence export |
 | DELETE | `/chat/messages/:messageId` | None | Sender-only local-hide flag; does not delete forensic record |
 
+Public user summaries returned by profile, user search, conversation membership, message history, and file history include `kycStatus`. Clients should render a verified-account indicator only when `kycStatus` is `VERIFIED`.
+
 ## Groups
 
 | Method | Path | Body | Purpose |

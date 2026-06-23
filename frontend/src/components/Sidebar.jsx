@@ -1,4 +1,5 @@
-import { conversationTitle, displayName, shortTime, userId } from '../lib/format.js'
+import KycBadge from './KycBadge.jsx'
+import { conversationPeer, conversationTitle, displayName, shortTime, userId } from '../lib/format.js'
 
 function initials(value) {
   return value.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
@@ -35,6 +36,7 @@ export default function Sidebar({ user, conversations, selectedId, onSelect, vie
           </div>
         )}
         {conversations.map((conversation) => {
+          const peer = conversationPeer(conversation, user.id)
           const title = conversationTitle(conversation, user.id)
           const active = selectedId === conversation._id && view === 'chat'
           const last = conversation.lastMessage
@@ -43,7 +45,10 @@ export default function Sidebar({ user, conversations, selectedId, onSelect, vie
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line bg-ink text-xs font-bold text-amber">{initials(title)}</span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center justify-between gap-2">
-                  <span className="truncate text-sm font-semibold">{title}</span>
+                  <span className="min-w-0 flex items-center gap-1.5">
+                    <span className="truncate text-sm font-semibold">{title}</span>
+                    <KycBadge user={peer} />
+                  </span>
                   <span className="shrink-0 text-[10px] text-slate-600">{shortTime(last?.createdAt || conversation.updatedAt)}</span>
                 </span>
                 <span className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
@@ -61,7 +66,10 @@ export default function Sidebar({ user, conversations, selectedId, onSelect, vie
       <div className="flex items-center gap-3 border-t border-line p-4">
         <span className="grid h-10 w-10 place-items-center rounded-full bg-amber text-xs font-black text-ink">{initials(displayName(user))}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">{displayName(user)}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="block truncate text-sm font-semibold">{displayName(user)}</span>
+            <KycBadge user={user} />
+          </span>
           <span className="block truncate text-[11px] text-slate-500">{user.email}</span>
         </span>
         <button className="text-xs text-slate-500 hover:text-red-300" onClick={onLogout}>Thoát</button>

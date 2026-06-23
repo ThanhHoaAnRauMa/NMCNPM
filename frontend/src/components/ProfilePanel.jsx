@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import KycBadge from './KycBadge.jsx'
 import { createKycDocumentProof } from '../lib/crypto.js'
 import { createIdentityBackup, restoreIdentityBackup } from '../lib/keyBackup.js'
 
@@ -132,7 +133,13 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
             <label className="mt-6 block text-xs font-semibold text-slate-300">Tên hiển thị<input className="field mt-2" maxLength={80} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label>
             <label className="mt-4 block text-xs font-semibold text-slate-300">Avatar URL<input className="field mt-2" type="url" value={form.avatarUrl} onChange={(event) => setForm({ ...form, avatarUrl: event.target.value })} /></label>
             <div className="mt-5 rounded-xl bg-ink/60 p-4 text-xs leading-6 text-slate-400">
-              <div className="flex justify-between"><span>Username</span><strong className="text-paper">@{profile?.username || '...'}</strong></div>
+              <div className="flex justify-between gap-3">
+                <span>Username</span>
+                <strong className="flex min-w-0 items-center gap-1.5 text-paper">
+                  <span className="truncate">@{profile?.username || '...'}</span>
+                  <KycBadge user={profile} />
+                </strong>
+              </div>
               <div className="flex justify-between"><span>Email</span><strong className="text-paper">{profile?.email || '...'}</strong></div>
             </div>
             <button className="btn-primary mt-5 w-full" type="submit">Lưu thay đổi</button>
@@ -166,7 +173,10 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
           <section className="panel rounded-2xl p-6 lg:col-span-2">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div><p className="eyebrow">KYC proof</p><h3 className="mt-2 text-xl font-bold">Bằng chứng xác minh</h3></div>
-              <span className="rounded-full border border-line px-3 py-1 text-xs font-bold text-amber">{profile?.kycStatus || 'NONE'}</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-xs font-bold text-amber">
+                <KycBadge user={profile} />
+                {profile?.kycStatus || 'NONE'}
+              </span>
             </div>
             <p className="mt-4 text-sm leading-6 text-slate-400">KYC là tùy chọn sau đăng ký. Reviewer được cấp quyền sẽ đối chiếu thông tin và hai ảnh CCCD lưu private trên Cloudinary. Chỉ tài khoản VERIFIED mới dùng KYC mode.</p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">

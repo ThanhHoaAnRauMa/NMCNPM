@@ -269,7 +269,7 @@ module.exports = function registerChatSocket(io) {
         const messages = await Message.find({ conversationId, createdAt: { $gt: sinceDate } })
           .sort({ createdAt: 1 })
           .limit(100)
-          .populate("senderId", "username displayName avatarUrl publicKey")
+          .populate("senderId", "username displayName avatarUrl kycStatus publicKey")
           .lean();
         socket.emit("missed_messages", { conversationId, messages, count: messages.length });
       } catch (error) {
