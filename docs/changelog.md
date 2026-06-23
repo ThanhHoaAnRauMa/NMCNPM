@@ -14,6 +14,7 @@ Fixed:
 
 * Allowed login when a username contains `@` or is entered as `@username` by resolving both username and email candidates before password verification.
 * Increased the frontend authentication timeout to 60 seconds so a Render cold start cannot leave login appearing permanently pending.
+* Kept the KYC submit button clickable when the device key is not ready so users receive actionable create/restore/sync guidance instead of a silent disabled cursor.
 
 ## 2026-06-22
 

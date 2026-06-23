@@ -14,6 +14,18 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
   const [backupPassword, setBackupPassword] = useState('')
   const backupInput = useRef(null)
   const keyReady = Boolean(identity) && keyStatus === 'ready'
+  const kycStatus = String(profile?.kycStatus || 'NONE').toUpperCase()
+  const kycReviewLocked = ['PENDING', 'VERIFIED'].includes(kycStatus)
+
+  const kycKeyGuidance = () => {
+    if (keyStatus === 'loading') return 'Đang kiểm tra khóa thiết bị, thử lại sau vài giây.'
+    if (keyStatus === 'missing') return 'Bạn cần tạo khóa thiết bị trước khi ký hồ sơ KYC.'
+    if (keyStatus === 'remote-only') return 'Tài khoản đã có khóa trên thiết bị khác. Hãy restore backup hoặc thay thế khóa trong mục Device key.'
+    if (keyStatus === 'local-only') return 'Khóa cục bộ chưa được đồng bộ với tài khoản. Bấm "Dùng khóa thiết bị này cho tài khoản" trước khi gửi KYC.'
+    if (keyStatus === 'mismatch') return 'Khóa thiết bị không khớp tài khoản. Hãy restore backup hoặc đồng bộ khóa trong mục Device key trước khi gửi KYC.'
+    if (keyStatus === 'error') return 'Không xác minh được trạng thái khóa thiết bị. Hãy tải lại trang hoặc đăng nhập lại.'
+    return 'Khóa thiết bị phải khớp tài khoản trước khi gửi KYC.'
+  }
 
   useEffect(() => {
     api.get('/users/me').then(({ user }) => {
@@ -40,7 +52,8 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
 
   const submitKyc = async () => {
     setError('')
-    if (!keyReady) return setError('Khóa thiết bị phải khớp tài khoản trước khi gửi KYC.')
+    if (kycReviewLocked) return setError(kycStatus === 'PENDING' ? 'Hồ sơ KYC đang chờ reviewer duyệt.' : 'Tài khoản đã xác minh KYC.')
+    if (!keyReady) return setError(kycKeyGuidance())
     if (kycForm.fullName.trim().length < 2 || !/^\d{12}$/.test(kycForm.citizenId) || !kycForm.dateOfBirth || kycForm.address.trim().length < 5) return setError('Vui lòng nhập đầy đủ thông tin CCCD hợp lệ.')
     if (!kycFiles.front || !kycFiles.back) return setError('Cần ảnh mặt trước và mặt sau CCCD.')
     try {
@@ -187,7 +200,8 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
               <label className="text-xs font-semibold text-slate-300">Ảnh mặt trước<input accept="image/jpeg,image/png,image/webp" className="field mt-2" type="file" onChange={(event) => setKycFiles({ ...kycFiles, front: event.target.files?.[0] || null })} /></label>
               <label className="text-xs font-semibold text-slate-300">Ảnh mặt sau<input accept="image/jpeg,image/png,image/webp" className="field mt-2" type="file" onChange={(event) => setKycFiles({ ...kycFiles, back: event.target.files?.[0] || null })} /></label>
             </div>
-            <button className="btn-primary mt-4" disabled={!keyReady || ['PENDING', 'VERIFIED'].includes(profile?.kycStatus)} onClick={submitKyc}>Ký và gửi hồ sơ KYC</button>
+            {!keyReady && !kycReviewLocked && <p className="mt-3 text-xs leading-5 text-amber">{kycKeyGuidance()}</p>}
+            <button className="btn-primary mt-4" disabled={kycReviewLocked} onClick={submitKyc} type="button">Ký và gửi hồ sơ KYC</button>
           </section>
 
           {reviewRecords && <section className="panel rounded-2xl p-6 lg:col-span-2">
