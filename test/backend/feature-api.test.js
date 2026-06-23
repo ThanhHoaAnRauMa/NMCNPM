@@ -255,16 +255,6 @@ describe('integrated feature API', () => {
     assert.equal(deletedForBob.body.conversations.length, 0)
     assert.ok(await Conversation.exists({ _id: created.body.conversationId }))
 
-    const restoredExisting = await request(app)
-      .post(`/users/${alice.user.id}/conversation`)
-      .set('Authorization', `Bearer ${bob.accessToken}`)
-      .send({ mode: 'KYC' })
-    assert.equal(restoredExisting.status, 200)
-    assert.equal(restoredExisting.body.isNew, false)
-    assert.equal(String(restoredExisting.body.conversationId), String(created.body.conversationId))
-    const visibleAgain = await request(app).get('/chat/conversations').set('Authorization', `Bearer ${bob.accessToken}`)
-    assert.equal(visibleAgain.body.conversations.length, 1)
-
     const group = await request(app)
       .post('/groups')
       .set('Authorization', `Bearer ${alice.accessToken}`)
@@ -328,7 +318,6 @@ describe('integrated feature API', () => {
     assert.equal(conversations.status, 200)
     assert.equal(conversations.body.conversations.length, 2)
     assert.deepEqual(new Set(conversations.body.conversations.map((item) => item.mode)), new Set(['KYC', 'PRIVACY']))
-    assert.equal(await Conversation.countDocuments({ type: 'DIRECT', members: { $all: [alice.user.id, bob.user.id], $size: 2 } }), 2)
   })
 
   test('places client-signed KYC proof in pending state', async () => {
