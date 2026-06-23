@@ -1,5 +1,13 @@
 const mongoose = require("../utils/mongoose");
 
+function conversationRoomId(value) {
+  const hex = String(value || "").toLowerCase();
+  if (/^[a-f0-9]{64}$/.test(hex)) return `0x${hex}`;
+  if (/^0x[a-f0-9]{64}$/.test(hex)) return hex;
+  if (/^[a-f0-9]{24}$/.test(hex)) return `0x${hex.padStart(64, "0")}`;
+  return null;
+}
+
 const ConversationSchema = new mongoose.Schema(
   {
     type: {
@@ -26,6 +34,13 @@ const ConversationSchema = new mongoose.Schema(
     groupAvatar: {
       type: String,
       default: null,
+    },
+    roomId: {
+      type: String,
+      default() {
+        return conversationRoomId(this._id);
+      },
+      match: /^0x[a-f0-9]{64}$/i,
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -64,6 +79,9 @@ ConversationSchema.index({ members: 1, archivedFor: 1, updatedAt: -1 });
 ConversationSchema.index({ members: 1, deletedFor: 1, updatedAt: -1 });
 ConversationSchema.index({ type: 1, members: 1 });
 ConversationSchema.index({ type: 1, mode: 1, members: 1 });
+ConversationSchema.index({ roomId: 1 }, { unique: true, sparse: true });
 
-module.exports =
-  mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
+const Conversation = mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
+
+module.exports = Conversation;
+module.exports.conversationRoomId = conversationRoomId;

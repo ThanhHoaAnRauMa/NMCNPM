@@ -4,7 +4,7 @@
 
 | Component | Responsibility |
 | --- | --- |
-| `frontend/` | React UI, JWT session, IndexedDB key storage, Web Crypto, Socket.IO client, ethers proof verification |
+| `frontend/` | React UI, JWT session, IndexedDB key storage, Web Crypto, Socket.IO client, local evidence verification |
 | `src/index.js` | Canonical Express/HTTP/Socket.IO process and MongoDB connection |
 | `src/backend/src/` | CommonJS auth, user, conversation, group, file, KYC, and realtime feature modules |
 | `src/routes/` | ESM message-search and Gemini AI routes |
@@ -26,8 +26,6 @@ flowchart TD
   Models --> Mongo[(MongoDB)]
   REST --> Gemini[Gemini REST API]
   REST --> Cloudinary[Cloudinary encrypted blobs]
-  UI --> Ethers[ethers.js]
-  Ethers --> Contract[ForensisChat on Sepolia]
 ```
 
 `src/index.js` is the only production entry point. `src/backend/server.js` is a compatibility launcher that dynamically imports it. Feature models use `src/backend/src/utils/mongoose.js` so nested dependencies cannot create a second disconnected Mongoose singleton.
@@ -63,7 +61,7 @@ The browser explicitly submits locally decrypted plaintext and message IDs. The 
 1. The authenticated browser pages through persisted KYC-mode ciphertext and decrypts readable transcript entries locally.
 2. It commits deterministic message metadata, ciphertext, and signatures into sorted-pair Keccak-256 Merkle leaves compatible with OpenZeppelin `MerkleProof`.
 3. The evidence JSON contains transcript text, signed ciphertext, sender public-key snapshots, leaves, proofs, and the root. Local verification recomputes every leaf/proof and verifies every ECDSA signature.
-4. An EVM wallet creates the contract room and explicitly signs propose, dispute, confirm, or proof-verification actions. Wallet private keys do not reach Express.
+4. Each conversation has a deterministic bytes32 Room ID. The browser includes it in evidence packages so another reviewer can match imported JSON to the conversation without manually inventing a contract room id.
 
 Transcript plaintext in an exported package is for authorized human review; its integrity is tied indirectly to the included decryptable ciphertext. The package itself must be handled as sensitive evidence.
 
@@ -103,11 +101,11 @@ Socket authentication occurs during the handshake with `auth.token`. Each connec
 | AI summary | MongoDB TTL cache, 1h |
 | Encrypted attachment blob | Cloudinary |
 | Authenticated CCCD images | Cloudinary; signed reviewer delivery only |
-| Merkle confirmed roots | Solidity contract |
+| Merkle roots/proofs | Browser-generated evidence package; Solidity contract remains in repo for tests/reference |
 
 ## Known Architecture Gaps
 
 * Root and feature directories still contain parallel schema declarations; the canonical runtime sharing rule is documented in `docs/database.md`.
-* Root proposals require an explicit participant-wallet transaction; there is no unattended signer or periodic commit worker.
+* The current frontend does not submit root proposals on-chain; there is no unattended signer or periodic commit worker.
 * Messages created before sender public-key snapshots were introduced can still fail signature verification after key rotation; no migration source exists for keys that were already overwritten.
 * Refresh tokens are returned to JavaScript because cookie-based session rotation is not implemented.

@@ -4,12 +4,14 @@
 
 Added:
 
+* Deterministic conversation Room IDs in conversation APIs and the forensic evidence export flow.
 * Per-user conversation archive and delete-from-list controls with REST APIs and sidebar actions.
 * KYC verified account badge in profile, user search, direct conversation titles, chat headers, message sender labels, and local message-search results.
 * Submitter email, username, display name, and current KYC status in the reviewer queue cards.
 
 Changed:
 
+* Reworked the forensic panel around local evidence packages and Room ID copy/export instead of visible Sepolia wallet actions.
 * Message and file history sender payloads now include `kycStatus` so clients can render verified-account indicators consistently.
 * KYC reviewer authorization now uses `KYC_REVIEWER_EMAILS` instead of MongoDB user ids.
 

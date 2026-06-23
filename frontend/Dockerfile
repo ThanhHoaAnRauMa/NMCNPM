@@ -6,9 +6,7 @@ RUN npm ci --no-audit --no-fund
 COPY . .
 
 ARG VITE_API_URL=http://localhost:3000
-ARG VITE_CONTRACT_ADDRESS=
 ENV VITE_API_URL=$VITE_API_URL
-ENV VITE_CONTRACT_ADDRESS=$VITE_CONTRACT_ADDRESS
 RUN npm run build
 
 FROM nginx:1.27-alpine

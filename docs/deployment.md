@@ -7,7 +7,7 @@
 | Node.js | `>=24 <25` |
 | Database | MongoDB 8 local or MongoDB Atlas |
 | Containers | Docker + Compose |
-| Contracts | Foundry for build/test/deploy |
+| Contracts | Foundry for build/test/reference contract work |
 | External services | Gemini for AI; Cloudinary for encrypted attachments and authenticated KYC document images |
 
 ## Local Development
@@ -52,8 +52,6 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | For files | Encrypted blob storage |
 | `MAX_FILE_SIZE_MB` | No | Default 10 MB |
 | `VITE_API_URL` | Frontend build | Public API/Socket.IO URL |
-| `VITE_CONTRACT_ADDRESS` | For proof UI | Deployed `ForensisChat` address |
-| `SEPOLIA_RPC_URL`, `PRIVATE_KEY`, `ETHERSCAN_API_KEY` | Contract deployment only | Never expose private key as `VITE_*` |
 
 ## Images
 
@@ -81,12 +79,11 @@ The backend syntax step checks `src/backend/server.js` and JavaScript under `src
 | API and Socket.IO | `https://secure-chat-forensics-api.onrender.com` | Render web service | Deployed from `main` |
 | React application | `https://secure-chat-forensics-web.onrender.com` | Render static site | Deployed from `main` |
 | Database | MongoDB Atlas | Atlas | Connected; credentials are external secrets |
-| ForensisChat proxy | [`0x8Dc323f07F7CdF275d33c842245b598Fc155D2D0`](https://sepolia.etherscan.io/address/0x8Dc323f07F7CdF275d33c842245b598Fc155D2D0) | Ethereum Sepolia | Deployed; frontend configured |
-| ForensisChat implementation | [`0x0cB12fF931fBa693b13f13B23f8486aa7b21Ae3e`](https://sepolia.etherscan.io/address/0x0cB12fF931fBa693b13f13B23f8486aa7b21Ae3e) | Ethereum Sepolia | Deployed behind ERC1967 proxy |
+| Forensic contract | Foundry source in repo | Optional/reference | Not required by current frontend forensic UI |
 
 The deploy workflow conditionally triggers the Render backend after successful CI on `main` using `RENDER_API_KEY` and `RENDER_SERVICE_ID`. Render also watches `main` for automatic deploys. The frontend is built with `VITE_API_URL` set to the production API, and the API allows the production frontend through `CORS_ORIGIN`.
 
-Gemini and Cloudinary are configured on the production backend and have authenticated production smoke coverage. The frontend `VITE_CONTRACT_ADDRESS` points to the proxy, not the implementation. Deployment transactions are recorded in `broadcast/DeployForensisChat.s.sol/11155111/`; the proxy owner remains the dedicated deployment wallet. A production KYC reviewer is allowlisted, and the GitHub `RENDER_API_KEY`/`RENDER_SERVICE_ID` secrets have been validated through a successful manual deploy workflow.
+Gemini and Cloudinary are configured on the production backend and have authenticated production smoke coverage. The current frontend forensic flow generates local evidence packages with conversation Room IDs and does not require a public contract address. A production KYC reviewer is allowlisted, and the GitHub `RENDER_API_KEY`/`RENDER_SERVICE_ID` secrets have been validated through a successful manual deploy workflow.
 
 ## Operational Gaps
 

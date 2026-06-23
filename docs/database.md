@@ -50,6 +50,7 @@ Indexes:
 | `members` | ObjectId[] -> `User` | Yes | Must contain at least one unique user |
 | `type` | String enum | Yes | Runtime values `DIRECT`, `GROUP` |
 | `groupName`, `groupAvatar` | String | No | Group display metadata |
+| `roomId` | String | No | Deterministic bytes32 conversation Room ID used in local evidence packages; old records can derive it from `_id` |
 | `admins` | ObjectId[] -> `User` | No | Group admin metadata |
 | `createdBy` | ObjectId -> `User` | No | Creator metadata |
 | `mode` | String enum | No | `KYC`, `PRIVACY` |
@@ -67,6 +68,7 @@ Indexes:
 | `{ members: 1, deletedFor: 1, updatedAt: -1 }` | Filtering user-hidden conversations |
 | `{ type: 1, members: 1 }` | Direct/group membership lookup |
 | `{ type: 1, mode: 1, members: 1 }` | Mode-specific direct conversation lookup |
+| `{ roomId: 1 }` unique sparse | Evidence package room lookup/display |
 
 ## Message
 

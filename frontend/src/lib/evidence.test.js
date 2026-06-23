@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { encryptText, generateIdentity } from './crypto.js'
-import { createEvidencePackage, verifyEvidencePackage } from './evidence.js'
+import { createEvidencePackage, roomIdForConversation, verifyEvidencePackage } from './evidence.js'
 
 describe('forensic evidence packages', () => {
+  it('derives a stable bytes32 room id from a conversation id', () => {
+    expect(roomIdForConversation({ _id: '507f191e810c19729de860ea' })).toBe('0x0000000000000000000000000000000000000000507f191e810c19729de860ea')
+    expect(roomIdForConversation({ roomId: `0x${'ab'.repeat(32)}` })).toBe(`0x${'ab'.repeat(32)}`)
+  })
+
   it('builds verifiable leaves, proofs and signatures', async () => {
     const identity = await generateIdentity()
     const senderId = '507f1f77bcf86cd799439011'

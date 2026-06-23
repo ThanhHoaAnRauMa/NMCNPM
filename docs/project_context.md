@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Secure Chat Forensics is an educational secure messaging platform that combines client-side encrypted chat, MongoDB metadata persistence, AI-assisted moderation/summaries, and blockchain-backed forensic verification.
+Secure Chat Forensics is an educational secure messaging platform that combines client-side encrypted chat, MongoDB metadata persistence, AI-assisted moderation/summaries, and browser-generated forensic evidence packages.
 
 Code is the source of truth. Requirement documents describe planned scope and must not be treated as implemented behavior.
 
@@ -16,7 +16,7 @@ Code is the source of truth. Requirement documents describe planned scope and mu
 | Database/Search | Mongoose models, indexes, TTL search snippets | `src/db/` |
 | AI | Gemini moderation and opt-in summary | `src/routes/ai.js`, `src/services/` |
 | Crypto | Browser Web Crypto plus standalone Node module | `frontend/src/lib/crypto.js`, `src/crypto/` |
-| Blockchain | Foundry contract deployed through an ERC1967 proxy on Sepolia | `src/ForensisChat.sol`, `script/`, `broadcast/`, `test/` |
+| Contracts | Foundry contract retained for tests/reference; frontend forensic demo is local evidence only | `src/ForensisChat.sol`, `script/`, `test/` |
 | DevOps | Backend/frontend images, Compose, CI, Render production services | `Dockerfile`, `frontend/Dockerfile`, `.github/` |
 
 ## Runtime Summary
@@ -26,7 +26,6 @@ flowchart LR
   Browser[React client] -->|JWT REST| API[Express API]
   Browser -->|JWT Socket.IO| Socket[Chat socket]
   Browser -->|Web Crypto| Keys[(IndexedDB device keys)]
-  Browser -->|ethers view call| Chain[ForensisChat / Sepolia]
   API --> Mongo[(MongoDB)]
   API --> Gemini[Google Gemini]
   API --> Cloudinary[Encrypted file blobs]
@@ -53,7 +52,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Manual KYC review | Signed CCCD fields/images, private upload, allowlisted review, resubmission, and KYC-mode enforcement implemented |
 | KYC verified account badge | Implemented in profile, user search, conversation list, chat header, message sender labels, and local search results when `kycStatus` is `VERIFIED` |
 | Device-key recovery | Password-encrypted local export/import implemented; no server key custody |
-| Forensic evidence | Local transcript package, Merkle proof/signature verification, room/root wallet actions implemented |
+| Forensic evidence | Local transcript package, conversation Room ID, Merkle proof/signature verification implemented |
 
 ## Technical Constraints
 
@@ -72,11 +71,11 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Area | Gap |
 | --- | --- |
 | KYC | Manual document review exists; OCR, liveness, government lookup, and external eKYC provider are not integrated |
-| Forensics | No unattended periodic root worker; wallet approval is required to avoid a server custody key |
+| Forensics | No unattended periodic root worker; current UI does not perform on-chain room/root actions |
 | Multi-device crypto | Local/server mismatch detection and encrypted manual recovery exist; no automatic trusted-device transfer, and legacy messages have no key snapshots |
 | Privacy mode | Ephemeral delivery has no offline recovery by design; the frontend keeps only a browser-session message cache for tab switching |
 | Attachments | Production Cloudinary is configured; local and future environments still require credentials and browser access to encrypted blobs |
-| Deployment | API, frontend, Atlas, Gemini, Cloudinary, Sepolia proxy, KYC reviewer allowlist, and GitHub-to-Render deploy secrets are configured |
+| Deployment | API, frontend, Atlas, Gemini, Cloudinary, KYC reviewer allowlist, and GitHub-to-Render deploy secrets are configured |
 | Operations | No Atlas automation, secret rotation workflow, metrics, tracing, or centralized logs |
 
 ## Validation Entry Points

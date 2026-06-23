@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import KycBadge from './KycBadge.jsx'
 import { decryptFile, decryptText, encryptFile, encryptText, verifyPayload } from '../lib/crypto.js'
+import { roomIdForConversation } from '../lib/evidence.js'
 import { conversationPeer, conversationTitle, displayName, fileSize, shortTime, userId } from '../lib/format.js'
 import { containsSubstring, fetchAllConversationMessages, highlightSubstring } from '../lib/localMessageSearch.js'
 
@@ -366,6 +367,17 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
 
   const otherTyping = typingUsers.map((id) => displayName(memberById.get(id))).join(', ')
   const peer = conversationPeer(conversation, currentUserId)
+  const currentRoomId = roomIdForConversation(conversation)
+  const shortRoomId = currentRoomId ? `${currentRoomId.slice(0, 10)}...${currentRoomId.slice(-8)}` : 'Not available'
+  const copyRoomId = async () => {
+    if (!currentRoomId) return
+    try {
+      await navigator.clipboard.writeText(currentRoomId)
+      setError('Room ID da duoc copy.')
+    } catch (_error) {
+      setError('Khong the copy Room ID. Hay mo Forensics de copy thu cong.')
+    }
+  }
 
   return (
     <div className="flex h-full min-h-0">
@@ -376,6 +388,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
               <span className="truncate">{conversationTitle(conversation, currentUserId)}</span>
               <KycBadge user={peer} />
             </h2>
+            <button className="mt-1 block max-w-full truncate font-mono text-[10px] text-slate-600 hover:text-mint" onClick={copyRoomId} title={currentRoomId} type="button">Room ID: {shortRoomId}</button>
             <p className="mt-1 text-[11px] text-slate-500">{members.length} thành viên · <span className={isPrivacy ? 'text-amber' : 'text-mint'}>{isPrivacy ? 'Privacy / ephemeral' : 'KYC / persisted ciphertext'}</span></p>
           </div>
           <div className="flex shrink-0 gap-2">

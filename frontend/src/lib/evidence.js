@@ -5,6 +5,16 @@ function idOf(value) {
   return String(value?._id || value?.id || value || '')
 }
 
+export function roomIdForConversation(conversation) {
+  const explicit = String(conversation?.roomId || '').toLowerCase()
+  if (/^0x[a-f0-9]{64}$/.test(explicit)) return explicit
+
+  const id = idOf(conversation)
+  if (/^[a-f0-9]{24}$/i.test(id)) return `0x${id.toLowerCase().padStart(64, '0')}`
+  if (/^0x[a-f0-9]{64}$/i.test(id)) return id.toLowerCase()
+  return ''
+}
+
 function hashPair(left, right) {
   return keccak256(concat([left, right].sort()))
 }

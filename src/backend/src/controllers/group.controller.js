@@ -1,6 +1,7 @@
 const mongoose = require("../utils/mongoose");
 const Conversation = require("../models/Conversation.model");
 const User = require("../models/User.model");
+const { conversationRoomId } = require("../models/Conversation.model");
 
 function validId(value) {
   return mongoose.Types.ObjectId.isValid(value);
@@ -31,13 +32,15 @@ exports.createGroup = async (req, res) => {
       if (memberId !== req.userId) {
         io?.to(`user:${memberId}`).emit("conversation_created", {
           conversationId: group._id,
+          roomId: group.roomId || conversationRoomId(group._id),
           type: group.type,
           mode: group.mode,
           createdBy: req.userId,
         });
       }
     }
-    return res.status(201).json({ success: true, group });
+    const groupObject = group.toObject();
+    return res.status(201).json({ success: true, group: { ...groupObject, roomId: groupObject.roomId || conversationRoomId(groupObject._id) } });
   } catch (error) {
     console.error("[createGroup]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
@@ -51,7 +54,10 @@ exports.getMyGroups = async (req, res) => {
       .populate("lastMessage")
       .sort({ updatedAt: -1 })
       .lean();
-    return res.json({ success: true, groups });
+    return res.json({
+      success: true,
+      groups: groups.map((group) => ({ ...group, roomId: group.roomId || conversationRoomId(group._id) })),
+    });
   } catch (error) {
     console.error("[getMyGroups]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
@@ -83,6 +89,7 @@ exports.getMyConversations = async (req, res) => {
 
       return {
         conversationId: conversation._id,
+        roomId: conversation.roomId || conversationRoomId(conversation._id),
         type: conversation.type,
         mode: conversation.mode,
         name: otherUser?.displayName || otherUser?.username || conversation.groupName || "Conversation",

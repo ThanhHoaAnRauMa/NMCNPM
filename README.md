@@ -1,6 +1,6 @@
 # Secure Chat Forensics
 
-Secure Chat Forensics is an educational full-stack messaging system that combines client-side encryption, MongoDB ciphertext persistence, Gemini-assisted moderation/summaries, and a Foundry/Sepolia Merkle verification contract.
+Secure Chat Forensics is an educational full-stack messaging system that combines client-side encryption, MongoDB ciphertext persistence, Gemini-assisted moderation/summaries, and browser-generated Merkle evidence packages.
 
 ## Implemented Stack
 
@@ -11,7 +11,7 @@ Secure Chat Forensics is an educational full-stack messaging system that combine
 | Database | MongoDB, Mongoose |
 | AI | Google Gemini REST API |
 | Files | Client-encrypted blobs stored through Cloudinary |
-| Blockchain | Solidity, Foundry, OpenZeppelin UUPS, Sepolia |
+| Contracts | Solidity, Foundry, OpenZeppelin UUPS; retained for tests/reference, not required by the current frontend demo |
 | DevOps | Docker, Docker Compose, GitHub Actions, Render backend trigger |
 
 ## Security Model
@@ -55,24 +55,14 @@ npm --prefix frontend run dev
 
 Copy `.env.example` to `.env` and configure JWT secrets. Gemini and Cloudinary are optional for core text chat but required for AI and encrypted attachments.
 
-## Contracts
+## Optional Contracts
 
 ```bash
 forge build
 forge test
 ```
 
-Deployment script:
-
-```bash
-forge script script/DeployForensisChat.s.sol:DeployForensisChat \
-  --rpc-url "$SEPOLIA_RPC_URL" \
-  --private-key "$PRIVATE_KEY" \
-  --broadcast --verify \
-  --etherscan-api-key "$ETHERSCAN_API_KEY"
-```
-
-Never expose `PRIVATE_KEY` through a `VITE_*` variable.
+The current frontend forensic flow exports local evidence JSON and does not require a deployed contract address.
 
 ## Documentation
 

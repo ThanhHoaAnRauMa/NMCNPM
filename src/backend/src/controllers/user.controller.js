@@ -1,6 +1,7 @@
 const mongoose = require("../utils/mongoose");
 const Conversation = require("../models/Conversation.model");
 const User = require("../models/User.model");
+const { conversationRoomId } = require("../models/Conversation.model");
 
 function validId(value) {
   return mongoose.Types.ObjectId.isValid(value);
@@ -151,6 +152,7 @@ exports.startDirectConversation = async (req, res) => {
       isNew = true;
       req.app.get("io")?.to(`user:${otherId}`).emit("conversation_created", {
         conversationId: conversation._id,
+        roomId: conversation.roomId || conversationRoomId(conversation._id),
         type: conversation.type,
         mode: conversation.mode,
         createdBy: req.userId,
@@ -158,7 +160,15 @@ exports.startDirectConversation = async (req, res) => {
     }
     const publicOtherUser = otherUser.toObject();
     delete publicOtherUser.blocklist;
-    return res.status(isNew ? 201 : 200).json({ success: true, conversationId: conversation._id, conversation, isNew, otherUser: publicOtherUser });
+    const conversationObject = typeof conversation.toObject === "function" ? conversation.toObject() : conversation;
+    return res.status(isNew ? 201 : 200).json({
+      success: true,
+      conversationId: conversation._id,
+      roomId: conversationObject.roomId || conversationRoomId(conversationObject._id),
+      conversation: { ...conversationObject, roomId: conversationObject.roomId || conversationRoomId(conversationObject._id) },
+      isNew,
+      otherUser: publicOtherUser,
+    });
   } catch (error) {
     console.error("[startDirectConversation]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });

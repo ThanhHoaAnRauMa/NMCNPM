@@ -164,7 +164,7 @@ This file records decisions that can be inferred from the current implementation
 | Context | The project owner explicitly authorized completion of production deployment after the frontend image and CI were ready. |
 | Rationale | A Render static site keeps frontend and backend operations under one provider and supports build-time `VITE_*` configuration. |
 | Alternatives Considered | Keep deployment deferred; use an unconfigured Vercel action. Both were rejected after Render was approved and provisioned. |
-| Decision | Deploy the React build as a Render static site from `main`, with `VITE_API_URL` and `VITE_CONTRACT_ADDRESS` supplied by Render. |
+| Decision | Deploy the React build as a Render static site from `main`, with `VITE_API_URL` supplied by Render. |
 | Consequences | Build-time environment changes require a frontend rebuild; Render service configuration remains external to Git. |
 
 ## Allowlisted Manual KYC Review

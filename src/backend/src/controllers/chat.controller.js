@@ -1,6 +1,7 @@
 const mongoose = require("../utils/mongoose");
 const Conversation = require("../models/Conversation.model");
 const Message = require("../models/Message.model");
+const { conversationRoomId } = require("../models/Conversation.model");
 
 function validId(value) {
   return mongoose.Types.ObjectId.isValid(value);
@@ -32,6 +33,7 @@ exports.getConversations = async (req, res) => {
         const { archivedFor = [], deletedFor: _deletedFor, ...publicConversation } = conversation;
         return {
           ...publicConversation,
+          roomId: publicConversation.roomId || conversationRoomId(publicConversation._id),
           archived: archivedFor.some((id) => id.toString() === req.userId),
         };
       }),

@@ -181,9 +181,11 @@ describe('integrated feature API', () => {
       .set('Authorization', `Bearer ${alice.accessToken}`)
       .send({ mode: 'KYC' })
     assert.equal(created.status, 201)
+    assert.match(created.body.roomId, /^0x[a-f0-9]{64}$/i)
     const directNotification = realtimeEvents.find((entry) => entry.event === 'conversation_created')
     assert.equal(directNotification.room, `user:${bob.user.id}`)
     assert.equal(String(directNotification.payload.conversationId), String(created.body.conversationId))
+    assert.equal(directNotification.payload.roomId, created.body.roomId)
     assert.equal(directNotification.payload.mode, 'KYC')
 
     const conversations = await request(app)
@@ -192,6 +194,7 @@ describe('integrated feature API', () => {
     assert.equal(conversations.status, 200)
     assert.equal(conversations.body.conversations.length, 1)
     assert.equal(String(conversations.body.conversations[0]._id), String(created.body.conversationId))
+    assert.equal(conversations.body.conversations[0].roomId, created.body.roomId)
 
     const compatibilityList = await request(app)
       .get('/groups/all')
@@ -199,6 +202,7 @@ describe('integrated feature API', () => {
     assert.equal(compatibilityList.status, 200)
     assert.equal(compatibilityList.body.conversations.length, 1)
     assert.equal(String(compatibilityList.body.conversations[0].conversationId), String(created.body.conversationId))
+    assert.equal(compatibilityList.body.conversations[0].roomId, created.body.roomId)
 
     await Message.create({
       conversationId: created.body.conversationId,
