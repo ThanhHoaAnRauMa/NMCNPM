@@ -43,7 +43,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Local device identity and public-key publication | Implemented |
 | User search, profile update, block/unblock | Implemented |
 | Mode-specific direct conversations and group administration | Implemented |
-| Realtime conversation sidebar listing | HTTP canonical list plus invited-member Socket.IO refresh signal |
+| Realtime conversation sidebar listing | HTTP canonical list plus invited/member message Socket.IO refresh signals |
 | JWT-authenticated realtime encrypted chat | Implemented |
 | Delivered/seen, typing, missed-message recovery | Implemented |
 | Encrypted attachment upload/download | Implemented; requires Cloudinary |
@@ -74,7 +74,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | KYC | Manual document review exists; OCR, liveness, government lookup, and external eKYC provider are not integrated |
 | Forensics | No unattended periodic root worker; wallet approval is required to avoid a server custody key |
 | Multi-device crypto | Local/server mismatch detection and encrypted manual recovery exist; no automatic trusted-device transfer, and legacy messages have no key snapshots |
-| Privacy mode | Ephemeral delivery has no offline recovery by design |
+| Privacy mode | Ephemeral delivery has no offline recovery by design; the frontend keeps only a browser-session message cache for tab switching |
 | Attachments | Production Cloudinary is configured; local and future environments still require credentials and browser access to encrypted blobs |
 | Deployment | API, frontend, Atlas, Gemini, Cloudinary, Sepolia proxy, KYC reviewer allowlist, and GitHub-to-Render deploy secrets are configured |
 | Operations | No Atlas automation, secret rotation workflow, metrics, tracing, or centralized logs |

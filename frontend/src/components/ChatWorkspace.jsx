@@ -14,6 +14,26 @@ function uniqueMessages(messages) {
   })
 }
 
+const MESSAGE_CACHE_LIMIT = 200
+const messageMemory = new Map()
+
+function messageTime(message) {
+  const value = new Date(message.createdAt || message.timestamp || 0).getTime()
+  return Number.isNaN(value) ? 0 : value
+}
+
+function normalizeMessages(messages) {
+  return uniqueMessages(messages).sort((left, right) => messageTime(left) - messageTime(right))
+}
+
+function readMessageCache(cacheKey) {
+  return cacheKey ? [...(messageMemory.get(cacheKey) || [])] : []
+}
+
+function writeMessageCache(cacheKey, messages) {
+  if (cacheKey) messageMemory.set(cacheKey, normalizeMessages(messages).slice(-MESSAGE_CACHE_LIMIT))
+}
+
 function HighlightedText({ value = '', keyword = '' }) {
   return highlightSubstring(value, keyword).map((part, index) => part.match
     ? <mark className="rounded bg-amber/30 px-0.5 text-paper" key={index}>{part.text}</mark>
@@ -41,6 +61,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
   const searchRun = useRef(0)
   const currentUserId = currentUser.id || currentUser._id
   const isPrivacy = ['PRIVACY', 'Privacy'].includes(conversation?.mode)
+  const cacheKey = currentUserId && conversation?._id ? `${currentUserId}:${conversation._id}` : null
 
   const members = useMemo(() => conversation?.members || [], [conversation])
   const memberById = useMemo(() => new Map(members.map((member) => [userId(member), member])), [members])
@@ -71,9 +92,19 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     return { ...message, senderId: sender || message.senderId, text, decrypted, verified }
   }
 
+  const updateMessages = (updater) => {
+    setMessages((current) => {
+      const next = normalizeMessages(typeof updater === 'function' ? updater(current) : updater)
+      writeMessageCache(cacheKey, next)
+      return next
+    })
+  }
+
   useEffect(() => {
     let active = true
-    setMessages([])
+    const activeCacheKey = currentUserId && conversation?._id ? `${currentUserId}:${conversation._id}` : null
+    const cachedMessages = readMessageCache(activeCacheKey)
+    setMessages(cachedMessages)
     setError('')
     setSummary(null)
     setSearchLoading(false)
@@ -88,7 +119,11 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     api.get(`/chat/${conversation._id}/messages?limit=50`)
       .then(async (payload) => {
         const hydrated = await Promise.all(payload.messages.map(hydrateMessage))
-        if (active) setMessages(hydrated)
+        if (active) {
+          const merged = normalizeMessages([...cachedMessages, ...hydrated])
+          writeMessageCache(activeCacheKey, merged)
+          setMessages(merged)
+        }
       })
       .catch((requestError) => active && setError(requestError.message))
       .finally(() => active && setLoading(false))
@@ -100,7 +135,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       if (String(message.conversationId) !== String(conversation._id)) return
       const hydrated = await hydrateMessage(message)
       if (!active) return
-      setMessages((current) => uniqueMessages([...current.filter((item) => item.tempId !== message.tempId || item._id), hydrated]))
+      updateMessages((current) => uniqueMessages([...current.filter((item) => item.tempId !== message.tempId || item._id), hydrated]))
       const plaintext = pendingPlaintext.current.get(message.tempId)
       if (plaintext) pendingPlaintext.current.delete(message.tempId)
     }
@@ -109,7 +144,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       await onMessage({ ...message, _id: message.tempId, msgType: 'TEXT', status: 'SENT' })
       socket.emit('ack_private_message', { tempId: message.tempId })
     }
-    const onStatus = ({ messageId, status }) => setMessages((current) => current.map((message) => String(message._id) === String(messageId) ? { ...message, status } : message))
+    const onStatus = ({ messageId, status }) => updateMessages((current) => current.map((message) => String(message._id) === String(messageId) ? { ...message, status } : message))
     const onTyping = ({ userId: typingUserId, conversationId }) => {
       if (String(conversationId) === String(conversation._id) && typingUserId !== currentUserId) setTypingUsers((current) => [...new Set([...current, typingUserId])])
     }
@@ -163,7 +198,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       pendingPlaintext.current.set(tempId, plaintext)
       const payload = { conversationId: conversation._id, ...encrypted, msgType: 'TEXT', tempId }
       if (isPrivacy) {
-        setMessages((current) => [...current, { _id: tempId, tempId, conversationId: conversation._id, senderId: currentUser, text: plaintext, decrypted: true, verified: true, msgType: 'TEXT', status: 'SENT', createdAt: new Date().toISOString() }])
+        updateMessages((current) => [...current, { _id: tempId, tempId, conversationId: conversation._id, senderId: currentUser, text: plaintext, decrypted: true, verified: true, msgType: 'TEXT', status: 'SENT', createdAt: new Date().toISOString() }])
         socket.emit('send_private_message', payload)
       } else {
         socket.emit('send_message', payload)
@@ -206,7 +241,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       formData.append('tempId', tempId)
       const payload = await api.upload('/files/upload', formData)
       const hydrated = await hydrateMessage(payload.message)
-      setMessages((current) => uniqueMessages([...current, hydrated]))
+      updateMessages((current) => uniqueMessages([...current, hydrated]))
     } catch (requestError) {
       setError(requestError.message)
     } finally {
@@ -250,7 +285,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
         }
       }
       if (runId !== searchRun.current) return
-      if (!isPrivacy) setMessages(hydrated)
+      if (!isPrivacy) updateMessages(hydrated)
       const textMessages = hydrated.filter((message) => message.msgType !== 'FILE')
       const searchable = textMessages.filter((message) => message.decrypted)
       const results = searchable.filter((message) => containsSubstring(message.text, keyword)).reverse()

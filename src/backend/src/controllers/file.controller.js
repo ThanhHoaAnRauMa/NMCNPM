@@ -2,6 +2,7 @@ const path = require("path");
 const Conversation = require("../models/Conversation.model");
 const Message = require("../models/Message.model");
 const User = require("../models/User.model");
+const { notifyConversationMembers } = require("../socket/chat.socket");
 const { uploadToCloudinary } = require("../utils/cloudinary.utils");
 const { verifyEnvelopeSignature } = require("../utils/signature.utils");
 
@@ -63,7 +64,8 @@ exports.uploadFile = async (req, res) => {
       filePublicId: uploaded.publicId,
     });
     await Conversation.findByIdAndUpdate(conversationId, { lastMessage: message._id });
-    req.app.get("io")?.to(conversationId).emit("new_message", {
+    const io = req.app.get("io");
+    io?.to(conversationId).emit("new_message", {
       _id: message._id,
       conversationId,
       senderId: req.userId,
@@ -79,6 +81,13 @@ exports.uploadFile = async (req, res) => {
       timestamp: message.timestamp,
       createdAt: message.createdAt,
     });
+    if (io) {
+      notifyConversationMembers(io, conversation, {
+        conversationId,
+        lastMessageId: message._id,
+        updatedAt: message.createdAt,
+      });
+    }
     return res.status(201).json({
       success: true,
       message: {

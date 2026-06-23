@@ -81,6 +81,7 @@ export default function App() {
       refreshFromRealtime()
     })
     connection.on('conversation_created', refreshFromRealtime)
+    connection.on('conversation_updated', refreshFromRealtime)
     connection.on('user_key_updated', refreshFromRealtime)
     setSocket(connection)
     return () => {

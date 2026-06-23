@@ -60,7 +60,7 @@ test('persisted send joins creator before broadcasting when explicit join is sti
       to(roomId) {
         return {
           emit(event, payload) {
-            broadcasts.push({ event, payload, senderWasJoined: rooms.has(String(roomId)) })
+            broadcasts.push({ event, payload, roomId: String(roomId), senderWasJoined: rooms.has(String(roomId)) })
           },
         }
       },
@@ -102,6 +102,10 @@ test('persisted send joins creator before broadcasting when explicit join is sti
     assert.equal(newMessage.senderWasJoined, true)
     assert.equal(newMessage.payload.tempId, 'temp-1')
     assert.equal(newMessage.payload.senderPublicKey, publicKey)
+    const updateRooms = broadcasts
+      .filter((entry) => entry.event === 'conversation_updated')
+      .map((entry) => entry.roomId)
+    assert.deepEqual(new Set(updateRooms), new Set(['user:creator', 'user:invitee']))
 
     const acceptedCount = broadcasts.filter((entry) => entry.event === 'new_message').length
     await handlers.get('send_message')({

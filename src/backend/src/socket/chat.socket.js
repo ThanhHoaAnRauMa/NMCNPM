@@ -39,6 +39,12 @@ async function ensureConversationRoom(socket, joinedConversations, conversationI
   return roomId;
 }
 
+function notifyConversationMembers(io, conversation, payload) {
+  for (const memberId of conversation.members || []) {
+    io.to(`user:${memberId.toString()}`).emit("conversation_updated", payload);
+  }
+}
+
 module.exports = function registerChatSocket(io) {
   io.use((socket, next) => {
     try {
@@ -161,6 +167,11 @@ module.exports = function registerChatSocket(io) {
           tempId,
         };
         io.to(conversationId).emit("new_message", messageData);
+        notifyConversationMembers(io, conversation, {
+          conversationId,
+          lastMessageId: message._id,
+          updatedAt: message.createdAt,
+        });
 
         const recipientOnline = conversation.members.some((id) => {
           const userId = id.toString();
@@ -290,3 +301,4 @@ module.exports = function registerChatSocket(io) {
 };
 
 module.exports.ensureConversationRoom = ensureConversationRoom;
+module.exports.notifyConversationMembers = notifyConversationMembers;
