@@ -43,11 +43,25 @@ const ConversationSchema = new mongoose.Schema(
       ref: "Message",
       default: null,
     },
+    archivedFor: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
+    deletedFor: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   { timestamps: true },
 );
 
 ConversationSchema.index({ members: 1, updatedAt: -1 });
+ConversationSchema.index({ members: 1, archivedFor: 1, updatedAt: -1 });
+ConversationSchema.index({ members: 1, deletedFor: 1, updatedAt: -1 });
 ConversationSchema.index({ type: 1, members: 1 });
 ConversationSchema.index({ type: 1, mode: 1, members: 1 });
 

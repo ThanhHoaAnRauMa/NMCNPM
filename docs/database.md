@@ -54,6 +54,8 @@ Indexes:
 | `createdBy` | ObjectId -> `User` | No | Creator metadata |
 | `mode` | String enum | No | `KYC`, `PRIVACY` |
 | `lastMessage` | ObjectId -> `Message` | No | Sidebar ordering/preview reference |
+| `archivedFor` | ObjectId[] -> `User` | No | Users who archived the conversation in their own list |
+| `deletedFor` | ObjectId[] -> `User` | No | Users who hid/deleted the conversation from their own list; records remain |
 | timestamps | Date | Auto | `createdAt`, `updatedAt` |
 
 Indexes:
@@ -61,6 +63,8 @@ Indexes:
 | Index | Purpose |
 | --- | --- |
 | `{ members: 1, updatedAt: -1 }` | Membership and recent ordering |
+| `{ members: 1, archivedFor: 1, updatedAt: -1 }` | Filtering archived conversations per user |
+| `{ members: 1, deletedFor: 1, updatedAt: -1 }` | Filtering user-hidden conversations |
 | `{ type: 1, members: 1 }` | Direct/group membership lookup |
 | `{ type: 1, mode: 1, members: 1 }` | Mode-specific direct conversation lookup |
 

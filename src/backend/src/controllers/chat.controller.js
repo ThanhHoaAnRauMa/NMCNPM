@@ -13,15 +13,76 @@ async function requireMembership(conversationId, userId) {
 
 exports.getConversations = async (req, res) => {
   try {
-    const conversations = await Conversation.find({ members: req.userId })
+    const includeArchived = req.query.includeArchived === "true";
+    const query = {
+      members: req.userId,
+      deletedFor: { $ne: req.userId },
+    };
+    if (!includeArchived) query.archivedFor = { $ne: req.userId };
+
+    const conversations = await Conversation.find(query)
       .populate("members", "username displayName avatarUrl kycStatus isOnline lastSeen publicKey")
       .populate("lastMessage")
       .sort({ updatedAt: -1 })
       .lean();
 
-    return res.json({ success: true, conversations });
+    return res.json({
+      success: true,
+      conversations: conversations.map((conversation) => {
+        const { archivedFor = [], deletedFor: _deletedFor, ...publicConversation } = conversation;
+        return {
+          ...publicConversation,
+          archived: archivedFor.some((id) => id.toString() === req.userId),
+        };
+      }),
+    });
   } catch (error) {
     console.error("[getConversations]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+exports.setConversationArchive = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const archived = req.body?.archived !== false;
+    if (!validId(conversationId)) {
+      return res.status(400).json({ success: false, message: "Invalid conversation id." });
+    }
+    const conversation = await Conversation.findOne({ _id: conversationId, members: req.userId, deletedFor: { $ne: req.userId } });
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: "Conversation not found." });
+    }
+
+    const update = archived
+      ? { $addToSet: { archivedFor: req.userId } }
+      : { $pull: { archivedFor: req.userId } };
+    await Conversation.updateOne({ _id: conversation._id }, update);
+    return res.json({ success: true, conversationId: conversation._id, archived });
+  } catch (error) {
+    console.error("[setConversationArchive]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+exports.deleteConversationForUser = async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    if (!validId(conversationId)) {
+      return res.status(400).json({ success: false, message: "Invalid conversation id." });
+    }
+    const conversation = await Conversation.findOne({ _id: conversationId, members: req.userId });
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: "Conversation not found." });
+    }
+
+    await Conversation.updateOne(
+      { _id: conversation._id },
+      { $addToSet: { deletedFor: req.userId }, $pull: { archivedFor: req.userId } },
+    );
+    return res.json({ success: true, conversationId: conversation._id, deleted: true });
+  } catch (error) {
+    console.error("[deleteConversationForUser]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };

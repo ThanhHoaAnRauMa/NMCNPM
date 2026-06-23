@@ -55,8 +55,10 @@ Registration compatibility note: clients must send `confirmPassword`. Older regi
 | POST | `/users/:id/block` | None | Block user |
 | POST | `/users/:id/unblock` | None | Unblock user |
 | POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find/create by pair and mode; KYC requires both users `VERIFIED` |
-| GET | `/chat/conversations` | None | List member conversations with members and last message |
+| GET | `/chat/conversations?includeArchived=` | `includeArchived=true` includes user-archived conversations | List member conversations with members and last message; deleted-for-user conversations stay hidden |
 | GET | `/chat/:conversationId/messages?before=&limit=&includeHidden=` | Limit 1-100 | Cursor history; membership required; `includeHidden=true` restores sender-hidden records for evidence export |
+| PATCH | `/chat/conversations/:conversationId/archive` | `{ archived: true | false }` | Archive/unarchive the conversation for the authenticated user only |
+| DELETE | `/chat/conversations/:conversationId` | None | Hide/delete the conversation from the authenticated user's list only; messages and forensic records remain |
 | DELETE | `/chat/messages/:messageId` | None | Sender-only local-hide flag; does not delete forensic record |
 
 Public user summaries returned by profile, user search, conversation membership, message history, and file history include `kycStatus`. Clients should render a verified-account indicator only when `kycStatus` is `VERIFIED`.

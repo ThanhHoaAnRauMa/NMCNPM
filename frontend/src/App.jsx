@@ -24,6 +24,11 @@ function normalizeConversations(conversations = []) {
   )
 }
 
+function visibleConversations(conversations = [], showArchived = false) {
+  const filtered = showArchived ? conversations.filter((conversation) => conversation.archived) : conversations
+  return normalizeConversations(filtered)
+}
+
 export default function App() {
   const auth = useSession()
   const [identity, setIdentity] = useState(null)
@@ -33,6 +38,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState(null)
   const [view, setView] = useState('chat')
   const [showNew, setShowNew] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
   const [socket, setSocket] = useState(null)
   const [systemError, setSystemError] = useState('')
   const currentUserId = auth.session?.user?.id || auth.session?.user?._id
@@ -40,15 +46,15 @@ export default function App() {
   const refreshConversations = useCallback(async (preferredId) => {
     if (!auth.session) return
     try {
-      const payload = await auth.api.get('/chat/conversations')
-      const normalized = normalizeConversations(payload.conversations)
+      const payload = await auth.api.get(`/chat/conversations${showArchived ? '?includeArchived=true' : ''}`)
+      const normalized = visibleConversations(payload.conversations, showArchived)
       setConversations(normalized)
       if (preferredId) setSelectedId(String(preferredId))
       else if (!selectedId && normalized.length) setSelectedId(String(normalized[0]._id))
     } catch (error) {
       setSystemError(error.message)
     }
-  }, [auth.api, auth.session, selectedId])
+  }, [auth.api, auth.session, selectedId, showArchived])
 
   useEffect(() => {
     if (!currentUserId) {
@@ -82,8 +88,8 @@ export default function App() {
     })
     const refreshFromRealtime = async () => {
       try {
-        const payload = await auth.api.get('/chat/conversations')
-        setConversations(normalizeConversations(payload.conversations))
+        const payload = await auth.api.get(`/chat/conversations${showArchived ? '?includeArchived=true' : ''}`)
+        setConversations(visibleConversations(payload.conversations, showArchived))
       } catch (error) {
         setSystemError(error.message)
       }
@@ -101,13 +107,17 @@ export default function App() {
       connection.disconnect()
       setSocket(null)
     }
-  }, [auth.api, auth.session?.accessToken])
+  }, [auth.api, auth.session?.accessToken, showArchived])
 
   useEffect(() => {
     if (auth.session) refreshConversations()
   // Initial session load only; explicit mutations call refreshConversations.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Boolean(auth.session)])
+
+  useEffect(() => {
+    if (auth.session) refreshConversations()
+  }, [auth.session, refreshConversations, showArchived])
 
   const selectedConversation = useMemo(() => conversations.find((conversation) => String(conversation._id) === String(selectedId)) || null, [conversations, selectedId])
 
@@ -159,6 +169,30 @@ export default function App() {
     ))))
   }, [])
 
+  const handleArchiveConversation = async (conversationId, archived) => {
+    setSystemError('')
+    try {
+      await auth.api.patch(`/chat/conversations/${conversationId}/archive`, { archived })
+      if (String(selectedId) === String(conversationId) && archived && !showArchived) setSelectedId(null)
+      await refreshConversations()
+    } catch (error) {
+      setSystemError(error.message)
+    }
+  }
+
+  const handleDeleteConversation = async (conversationId) => {
+    if (!window.confirm('Xóa cuộc trò chuyện khỏi danh sách của bạn? Tin nhắn forensic/persisted không bị xóa khỏi hệ thống.')) return
+    setSystemError('')
+    try {
+      await auth.api.delete(`/chat/conversations/${conversationId}`)
+      setConversations((current) => current.filter((conversation) => String(conversation._id) !== String(conversationId)))
+      if (String(selectedId) === String(conversationId)) setSelectedId(null)
+      await refreshConversations()
+    } catch (error) {
+      setSystemError(error.message)
+    }
+  }
+
   const updateSessionUser = (user) => {
     auth.setSession({ ...auth.session, user: { ...auth.session.user, ...user, id: user.id || user._id } })
   }
@@ -181,11 +215,15 @@ export default function App() {
           <Sidebar
             conversations={conversations}
             keyReady={keyStatus === 'ready'}
+            onArchive={handleArchiveConversation}
+            onDelete={handleDeleteConversation}
             onLogout={auth.logout}
             onNew={() => setShowNew(true)}
             onSelect={(id) => { setSelectedId(String(id)); setView('chat') }}
+            onToggleArchived={() => setShowArchived((current) => !current)}
             onView={(nextView) => setView(nextView)}
             selectedId={selectedId}
+            showArchived={showArchived}
             user={auth.session.user}
             view={view}
           />
