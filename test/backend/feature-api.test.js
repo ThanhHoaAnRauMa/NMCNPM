@@ -299,6 +299,22 @@ describe('integrated feature API', () => {
 
     const status = await request(app).get('/kyc/status').set('Authorization', `Bearer ${alice.accessToken}`)
     assert.equal(status.body.kycStatus, 'PENDING')
+
+    const updated = await submitKyc(alice, { address: '456 Updated Street', front: 'updated-front', back: 'updated-back' })
+    assert.equal(updated.status, 201)
+    assert.equal(updated.body.updated, true)
+    assert.equal(updated.body.kycRecord.status, 'PENDING')
+    const currentRecord = await KYCRecord.findById(updated.body.kycRecord.id).lean()
+    assert.equal(currentRecord.address, '456 Updated Street')
+    assert.deepEqual(deletedCloudinaryAssets, [
+      { publicId: 'kyc-test-1', resourceType: 'image', type: 'authenticated' },
+      { publicId: 'kyc-test-2', resourceType: 'image', type: 'authenticated' },
+    ])
+
+    const mine = await request(app).get('/kyc/me').set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(mine.status, 200)
+    assert.equal(mine.body.kycRecord.address, '456 Updated Street')
+    assert.equal(mine.body.kycRecord.hasDocumentFront, true)
   })
 
   test('restricts KYC reviews and synchronizes reviewer decisions', async () => {

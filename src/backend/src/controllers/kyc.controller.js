@@ -53,9 +53,10 @@ exports.submitKYC = async (req, res) => {
     }
 
     const existing = await KYCRecord.findOne({ userId: req.userId });
-    if (existing && existing.status !== "REJECTED") {
-      return res.status(409).json({ success: false, message: "A KYC submission already exists.", status: existing.status });
+    if (existing?.status === "VERIFIED") {
+      return res.status(409).json({ success: false, message: "KYC is already verified.", status: existing.status });
     }
+    const updatingPending = existing?.status === "PENDING";
 
     let uploadedFront;
     let uploadedBack;
@@ -84,12 +85,39 @@ exports.submitKYC = async (req, res) => {
     await User.findByIdAndUpdate(req.userId, { kycStatus: "PENDING" });
     return res.status(201).json({
       success: true,
-      message: "KYC proof submitted for review.",
+      message: updatingPending ? "KYC proof updated for review." : "KYC proof submitted for review.",
+      updated: updatingPending,
       kycRecord: { id: record._id, status: record.status, verifiedAt: record.verifiedAt },
     });
   } catch (error) {
     if (error.code === 11000) return res.status(409).json({ success: false, message: "A KYC submission already exists." });
     console.error("[submitKYC]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+exports.getMyKYCRecord = async (req, res) => {
+  try {
+    const record = await KYCRecord.findOne({ userId: req.userId }).lean();
+    if (!record) return res.json({ success: true, kycRecord: null });
+    return res.json({
+      success: true,
+      kycRecord: {
+        id: record._id,
+        status: record.status,
+        fullName: record.fullName || "",
+        citizenId: record.citizenId || "",
+        dateOfBirth: record.dateOfBirth ? record.dateOfBirth.toISOString().slice(0, 10) : "",
+        address: record.address || "",
+        hasDocumentFront: Boolean(record.documentFrontPublicId),
+        hasDocumentBack: Boolean(record.documentBackPublicId),
+        reviewedAt: record.reviewedAt,
+        verifiedAt: record.verifiedAt,
+        rejectionReason: record.rejectionReason || null,
+      },
+    });
+  } catch (error) {
+    console.error("[getMyKYCRecord]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };

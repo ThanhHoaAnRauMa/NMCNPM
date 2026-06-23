@@ -99,7 +99,8 @@ The upload signature must match the sender's current account public key. A stale
 
 | Method | Path | Body / Result |
 | --- | --- | --- |
-| POST | `/kyc/submit` | `multipart/form-data`; creates `PENDING`, never auto-verifies |
+| POST | `/kyc/submit` | `multipart/form-data`; creates or updates a `PENDING` record, never auto-verifies |
+| GET | `/kyc/me` | None | Return the authenticated user's current KYC fields/status for editing pending or rejected records |
 | GET | `/kyc/status` | Current user's status |
 | GET | `/kyc/status/:userId` | Authenticated status lookup |
 | GET | `/kyc/reviews?status=&limit=` | Reviewer allowlist | Review queue; status defaults to `PENDING`, limit max 100 |

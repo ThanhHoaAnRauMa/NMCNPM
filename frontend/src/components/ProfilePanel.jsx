@@ -17,14 +17,15 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
   const backupInput = useRef(null)
   const keyReady = Boolean(identity) && keyStatus === 'ready'
   const kycStatus = String(profile?.kycStatus || 'NONE').toUpperCase()
-  const kycReviewLocked = ['PENDING', 'VERIFIED'].includes(kycStatus)
+  const kycPending = kycStatus === 'PENDING'
+  const kycReviewLocked = kycStatus === 'VERIFIED'
   const kycPanelMessage = {
-    PENDING: 'Đã gửi hồ sơ KYC. Hồ sơ đang chờ reviewer đối chiếu và duyệt.',
+    PENDING: 'Đã gửi hồ sơ KYC. Hồ sơ đang chờ reviewer đối chiếu; bạn vẫn có thể cập nhật thông tin trước khi được duyệt. Khi cập nhật, vui lòng tải lại cả hai ảnh CCCD để ký lại hồ sơ.',
     VERIFIED: 'Tài khoản đã xác minh KYC thành công. Bạn có thể dùng KYC mode.',
     REJECTED: 'Hồ sơ KYC trước đó đã bị từ chối. Bạn có thể chỉnh thông tin và gửi lại.',
   }[kycStatus]
   const kycSubmitLabel = {
-    PENDING: 'Đã gửi, đang chờ duyệt',
+    PENDING: 'Cập nhật hồ sơ KYC',
     VERIFIED: 'Đã xác minh KYC',
   }[kycStatus] || 'Ký và gửi hồ sơ KYC'
 
@@ -100,6 +101,17 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
     api.get('/kyc/reviews').then(({ records }) => setReviewRecords(records)).catch((requestError) => {
       if (requestError.status !== 403) setError(requestError.message)
     })
+    api.get('/kyc/me').then(({ kycRecord }) => {
+      if (!kycRecord) return
+      setKycForm({
+        fullName: kycRecord.fullName || '',
+        citizenId: kycRecord.citizenId || '',
+        dateOfBirth: kycRecord.dateOfBirth || '',
+        address: kycRecord.address || '',
+      })
+    }).catch((requestError) => {
+      if (requestError.status !== 404) setError(requestError.message)
+    })
   }, [api])
 
   const save = async (event) => {
@@ -118,7 +130,8 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
   const submitKyc = async () => {
     setError('')
     setKycDialog(null)
-    if (kycReviewLocked) return showKycError(kycStatus === 'PENDING' ? 'Hồ sơ KYC đang chờ reviewer duyệt.' : 'Tài khoản đã xác minh KYC.')
+    const wasPending = kycPending
+    if (kycReviewLocked) return showKycError('Tài khoản đã xác minh KYC.')
     if (!keyReady) return showKycError(kycKeyGuidance())
     const validationErrors = validateKyc()
     const firstError = Object.values(validationErrors).find(Boolean)
@@ -131,7 +144,7 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
       formData.append('documentBack', kycFiles.back)
       const payload = await api.upload('/kyc/submit', formData)
       setProfile((current) => ({ ...current, kycStatus: payload.kycRecord.status }))
-      showKycSuccess('Hồ sơ KYC đã gửi và đang chờ reviewer đối chiếu.')
+      showKycSuccess(wasPending || payload.updated ? 'Đã cập nhật hồ sơ KYC. Hồ sơ đang chờ reviewer đối chiếu.' : 'Hồ sơ KYC đã gửi và đang chờ reviewer đối chiếu.')
       setKycFieldErrors({})
       setKycFiles({ front: null, back: null })
     } catch (requestError) {

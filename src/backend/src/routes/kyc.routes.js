@@ -13,6 +13,8 @@ router.post("/submit", verifyToken, (req, res, next) => {
   });
 }, kycCtrl.submitKYC);
 
+router.get("/me", verifyToken, kycCtrl.getMyKYCRecord);
+
 router.get("/status", verifyToken, kycCtrl.getKYCStatus);
 
 router.get("/status/:userId", verifyToken, kycCtrl.getUserKYCStatus);
