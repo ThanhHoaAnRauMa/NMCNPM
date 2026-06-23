@@ -14,6 +14,8 @@ Changed:
 
 Fixed:
 
+* Used persisted MongoDB ObjectId ordering before timestamp fallback so KYC chat history renders consistently across participants.
+* Kept the AI summary button clickable in Privacy mode and showed an explicit local-policy explanation instead of a disabled control.
 * Kept chat message order stable with an id tie-breaker and server-confirmed Privacy timestamps.
 * Updated the active conversation preview immediately from received/sent messages so the sidebar no longer stays at "Chưa có tin nhắn" while the message is visible in the chat.
 * Refreshed member conversation lists after persisted message/file sends by emitting `conversation_updated` to each member's user room, including members who have not opened the new group room yet.

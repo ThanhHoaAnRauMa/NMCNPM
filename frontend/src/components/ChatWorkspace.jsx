@@ -17,16 +17,31 @@ function uniqueMessages(messages) {
 const MESSAGE_CACHE_LIMIT = 200
 const messageMemory = new Map()
 
+function persistedMessageId(message) {
+  const id = String(message?._id || '')
+  return /^[a-f0-9]{24}$/i.test(id) ? id.toLowerCase() : null
+}
+
+function objectIdTime(id) {
+  return Number.parseInt(id.slice(0, 8), 16) * 1000
+}
+
 function messageTime(message) {
+  const persistedId = persistedMessageId(message)
+  if (persistedId) return objectIdTime(persistedId)
   const value = new Date(message.createdAt || message.timestamp || 0).getTime()
   return Number.isNaN(value) ? 0 : value
 }
 
 function normalizeMessages(messages) {
-  return uniqueMessages(messages).sort((left, right) =>
-    messageTime(left) - messageTime(right) ||
-    String(left._id || left.tempId || '').localeCompare(String(right._id || right.tempId || '')),
-  )
+  return uniqueMessages(messages).sort((left, right) => {
+    const timeDiff = messageTime(left) - messageTime(right)
+    if (timeDiff) return timeDiff
+    const leftPersistedId = persistedMessageId(left)
+    const rightPersistedId = persistedMessageId(right)
+    if (leftPersistedId && rightPersistedId) return leftPersistedId.localeCompare(rightPersistedId)
+    return String(left.tempId || left._id || '').localeCompare(String(right.tempId || right._id || ''))
+  })
 }
 
 function readMessageCache(cacheKey) {
@@ -326,6 +341,11 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
 
   const summarize = async () => {
     setError('')
+    if (isPrivacy) {
+      setPanel('summary')
+      setSummary({ summary: 'Privacy mode khong luu ciphertext trong Message DB, nen AI summary hien chi ho tro KYC/persisted conversations.', messageCount: 0, model: 'local-policy' })
+      return
+    }
     const source = messages.filter((message) => /^[a-f0-9]{24}$/i.test(String(message._id)) && message.decrypted && message.msgType !== 'FILE').slice(-100)
     if (!source.length) return setError('Không có tin nhắn đã giải mã và lưu DB để tóm tắt.')
     try {
@@ -361,7 +381,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
           </div>
           <div className="flex shrink-0 gap-2">
             <button className="btn-secondary" onClick={() => setPanel(panel === 'search' ? null : 'search')}>Tìm kiếm</button>
-            <button className="btn-secondary" disabled={isPrivacy} onClick={summarize}>AI tóm tắt</button>
+            <button className="btn-secondary" onClick={summarize}>AI tóm tắt</button>
           </div>
         </header>
 
