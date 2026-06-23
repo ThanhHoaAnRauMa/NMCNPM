@@ -11,7 +11,8 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
   const [reviewRecords, setReviewRecords] = useState(null)
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
-  const [kycDialog, setKycDialog] = useState('')
+  const [kycDialog, setKycDialog] = useState(null)
+  const [kycFieldErrors, setKycFieldErrors] = useState({})
   const [backupPassword, setBackupPassword] = useState('')
   const backupInput = useRef(null)
   const keyReady = Boolean(identity) && keyStatus === 'ready'
@@ -37,9 +38,58 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
     return 'Khóa thiết bị phải khớp tài khoản trước khi gửi KYC.'
   }
 
+  const kycFieldError = (field, value) => {
+    const text = String(value || '').trim()
+    if (field === 'fullName') return text.length >= 2 ? '' : 'Họ và tên phải có ít nhất 2 ký tự.'
+    if (field === 'citizenId') return /^\d{12}$/.test(text) ? '' : 'Số CCCD phải gồm đúng 12 chữ số.'
+    if (field === 'dateOfBirth') return text ? '' : 'Vui lòng chọn ngày sinh.'
+    if (field === 'address') return text.length >= 5 ? '' : 'Địa chỉ phải có ít nhất 5 ký tự.'
+    return ''
+  }
+
+  const updateKycField = (field, value) => {
+    setKycForm((current) => ({ ...current, [field]: value }))
+    setKycFieldErrors((current) => ({ ...current, [field]: kycFieldError(field, value) }))
+  }
+
+  const updateCitizenId = (rawValue) => {
+    const digits = rawValue.replace(/\D/g, '')
+    setKycForm((current) => ({ ...current, citizenId: digits }))
+    setKycFieldErrors((current) => ({
+      ...current,
+      citizenId: rawValue !== digits ? 'Số CCCD chỉ được nhập chữ số.' : kycFieldError('citizenId', digits),
+    }))
+  }
+
+  const updateKycFile = (field, file) => {
+    setKycFiles((current) => ({ ...current, [field]: file }))
+    let message = ''
+    if (!file) message = field === 'front' ? 'Cần ảnh mặt trước CCCD.' : 'Cần ảnh mặt sau CCCD.'
+    else if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) message = 'Ảnh CCCD chỉ hỗ trợ JPG, PNG hoặc WebP.'
+    setKycFieldErrors((current) => ({ ...current, [field]: message }))
+  }
+
+  const validateKyc = () => {
+    const nextErrors = {
+      fullName: kycFieldError('fullName', kycForm.fullName),
+      citizenId: kycFieldError('citizenId', kycForm.citizenId),
+      dateOfBirth: kycFieldError('dateOfBirth', kycForm.dateOfBirth),
+      address: kycFieldError('address', kycForm.address),
+      front: !kycFiles.front ? 'Cần ảnh mặt trước CCCD.' : !['image/jpeg', 'image/png', 'image/webp'].includes(kycFiles.front.type) ? 'Ảnh CCCD chỉ hỗ trợ JPG, PNG hoặc WebP.' : '',
+      back: !kycFiles.back ? 'Cần ảnh mặt sau CCCD.' : !['image/jpeg', 'image/png', 'image/webp'].includes(kycFiles.back.type) ? 'Ảnh CCCD chỉ hỗ trợ JPG, PNG hoặc WebP.' : '',
+    }
+    setKycFieldErrors(nextErrors)
+    return nextErrors
+  }
+
   const showKycError = (message) => {
     setError(message)
-    setKycDialog(message)
+    setKycDialog({ type: 'error', title: 'Không thể gửi hồ sơ KYC', message })
+  }
+
+  const showKycSuccess = (message) => {
+    setNotice(message)
+    setKycDialog({ type: 'success', title: 'Đã gửi hồ sơ KYC', message })
   }
 
   useEffect(() => {
@@ -67,11 +117,12 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
 
   const submitKyc = async () => {
     setError('')
-    setKycDialog('')
+    setKycDialog(null)
     if (kycReviewLocked) return showKycError(kycStatus === 'PENDING' ? 'Hồ sơ KYC đang chờ reviewer duyệt.' : 'Tài khoản đã xác minh KYC.')
     if (!keyReady) return showKycError(kycKeyGuidance())
-    if (kycForm.fullName.trim().length < 2 || !/^\d{12}$/.test(kycForm.citizenId) || !kycForm.dateOfBirth || kycForm.address.trim().length < 5) return showKycError('Vui lòng nhập đầy đủ thông tin CCCD hợp lệ.')
-    if (!kycFiles.front || !kycFiles.back) return showKycError('Cần ảnh mặt trước và mặt sau CCCD.')
+    const validationErrors = validateKyc()
+    const firstError = Object.values(validationErrors).find(Boolean)
+    if (firstError) return showKycError(firstError)
     try {
       const proof = await createKycDocumentProof(kycForm, kycFiles.front, kycFiles.back, identity)
       const formData = new FormData()
@@ -80,8 +131,8 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
       formData.append('documentBack', kycFiles.back)
       const payload = await api.upload('/kyc/submit', formData)
       setProfile((current) => ({ ...current, kycStatus: payload.kycRecord.status }))
-      setNotice('Hồ sơ KYC đã gửi và đang chờ reviewer đối chiếu.')
-      setKycDialog('')
+      showKycSuccess('Hồ sơ KYC đã gửi và đang chờ reviewer đối chiếu.')
+      setKycFieldErrors({})
       setKycFiles({ front: null, back: null })
     } catch (requestError) {
       showKycError(requestError.message)
@@ -157,11 +208,11 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
         {(error || notice) && <div className={`mt-6 rounded-xl border px-4 py-3 text-sm ${error ? 'border-red-400/30 bg-red-400/10 text-red-200' : 'border-mint/30 bg-mint/10 text-mint'}`}>{error || notice}</div>}
         {kycDialog && (
           <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
-            <div className="w-full max-w-md rounded-2xl border border-red-400/30 bg-panel p-6 shadow-2xl">
-              <p className="eyebrow text-red-200">KYC proof</p>
-              <h3 className="mt-2 text-xl font-bold text-paper">Không thể gửi hồ sơ KYC</h3>
-              <p className="mt-3 text-sm leading-6 text-red-100">{kycDialog}</p>
-              <button className="btn-primary mt-5 w-full" onClick={() => setKycDialog('')} type="button">Đã hiểu</button>
+            <div className={`w-full max-w-md rounded-2xl border bg-panel p-6 shadow-2xl ${kycDialog.type === 'success' ? 'border-mint/30' : 'border-red-400/30'}`}>
+              <p className={`eyebrow ${kycDialog.type === 'success' ? 'text-mint' : 'text-red-200'}`}>KYC proof</p>
+              <h3 className="mt-2 text-xl font-bold text-paper">{kycDialog.title}</h3>
+              <p className={`mt-3 text-sm leading-6 ${kycDialog.type === 'success' ? 'text-mint' : 'text-red-100'}`}>{kycDialog.message}</p>
+              <button className="btn-primary mt-5 w-full" onClick={() => setKycDialog(null)} type="button">Đã hiểu</button>
             </div>
           </div>
         )}
@@ -225,12 +276,12 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
               </div>
             )}
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <label className="text-xs font-semibold text-slate-300">Họ và tên<input className="field mt-2" maxLength={120} required value={kycForm.fullName} onChange={(event) => setKycForm({ ...kycForm, fullName: event.target.value })} /></label>
-              <label className="text-xs font-semibold text-slate-300">Số CCCD<input className="field mt-2" inputMode="numeric" maxLength={12} minLength={12} pattern="[0-9]{12}" required value={kycForm.citizenId} onChange={(event) => setKycForm({ ...kycForm, citizenId: event.target.value.replace(/\D/g, '') })} /></label>
-              <label className="text-xs font-semibold text-slate-300">Ngày sinh<input className="field mt-2" type="date" required value={kycForm.dateOfBirth} onChange={(event) => setKycForm({ ...kycForm, dateOfBirth: event.target.value })} /></label>
-              <label className="text-xs font-semibold text-slate-300">Địa chỉ<input className="field mt-2" maxLength={500} required value={kycForm.address} onChange={(event) => setKycForm({ ...kycForm, address: event.target.value })} /></label>
-              <label className="text-xs font-semibold text-slate-300">Ảnh mặt trước<input accept="image/jpeg,image/png,image/webp" className="field mt-2" type="file" onChange={(event) => setKycFiles({ ...kycFiles, front: event.target.files?.[0] || null })} /></label>
-              <label className="text-xs font-semibold text-slate-300">Ảnh mặt sau<input accept="image/jpeg,image/png,image/webp" className="field mt-2" type="file" onChange={(event) => setKycFiles({ ...kycFiles, back: event.target.files?.[0] || null })} /></label>
+              <label className="text-xs font-semibold text-slate-300">Họ và tên<input className="field mt-2" maxLength={120} required value={kycForm.fullName} onChange={(event) => updateKycField('fullName', event.target.value)} />{kycFieldErrors.fullName && <span className="mt-1 block text-[11px] leading-4 text-red-200">{kycFieldErrors.fullName}</span>}</label>
+              <label className="text-xs font-semibold text-slate-300">Số CCCD<input className="field mt-2" inputMode="numeric" maxLength={12} minLength={12} pattern="[0-9]{12}" required value={kycForm.citizenId} onChange={(event) => updateCitizenId(event.target.value)} /><span className="mt-1 block text-[11px] leading-4 text-slate-500">Chỉ nhập 12 chữ số, không nhập chữ cái hoặc ký tự đặc biệt.</span>{kycFieldErrors.citizenId && <span className="mt-1 block text-[11px] leading-4 text-red-200">{kycFieldErrors.citizenId}</span>}</label>
+              <label className="text-xs font-semibold text-slate-300">Ngày sinh<input className="field mt-2" type="date" required value={kycForm.dateOfBirth} onChange={(event) => updateKycField('dateOfBirth', event.target.value)} />{kycFieldErrors.dateOfBirth && <span className="mt-1 block text-[11px] leading-4 text-red-200">{kycFieldErrors.dateOfBirth}</span>}</label>
+              <label className="text-xs font-semibold text-slate-300">Địa chỉ<input className="field mt-2" maxLength={500} required value={kycForm.address} onChange={(event) => updateKycField('address', event.target.value)} />{kycFieldErrors.address && <span className="mt-1 block text-[11px] leading-4 text-red-200">{kycFieldErrors.address}</span>}</label>
+              <label className="text-xs font-semibold text-slate-300">Ảnh mặt trước<input accept="image/jpeg,image/png,image/webp" className="field mt-2" type="file" onChange={(event) => updateKycFile('front', event.target.files?.[0] || null)} />{kycFieldErrors.front && <span className="mt-1 block text-[11px] leading-4 text-red-200">{kycFieldErrors.front}</span>}</label>
+              <label className="text-xs font-semibold text-slate-300">Ảnh mặt sau<input accept="image/jpeg,image/png,image/webp" className="field mt-2" type="file" onChange={(event) => updateKycFile('back', event.target.files?.[0] || null)} />{kycFieldErrors.back && <span className="mt-1 block text-[11px] leading-4 text-red-200">{kycFieldErrors.back}</span>}</label>
             </div>
             {!keyReady && !kycReviewLocked && <p className="mt-3 text-xs leading-5 text-amber">{kycKeyGuidance()}</p>}
             <button className="btn-primary mt-4" disabled={kycReviewLocked} onClick={submitKyc} type="button">{kycSubmitLabel}</button>

@@ -14,6 +14,8 @@ Changed:
 
 Fixed:
 
+* Split KYC proof validation by field, including inline messages for name, CCCD, birth date, address, and document images.
+* Showed KYC proof success in the centered dialog instead of only at the top of the profile page.
 * Removed the non-actionable AI moderation fallback warning from chat sends.
 * Replaced the disabled Privacy summary button with a visible explanation that AI summary is unavailable in Privacy mode.
 * Added an in-place KYC proof dialog for invalid KYC submissions so users do not need to scroll to the top of the profile page.
