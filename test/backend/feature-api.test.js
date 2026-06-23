@@ -311,7 +311,7 @@ describe('integrated feature API', () => {
       .set('Authorization', `Bearer ${alice.accessToken}`)
     assert.equal(denied.status, 403)
 
-    process.env.KYC_REVIEWER_USER_IDS = reviewer.user.id
+    process.env.KYC_REVIEWER_EMAILS = reviewer.user.email
     const queue = await request(app)
       .get('/kyc/reviews')
       .set('Authorization', `Bearer ${reviewer.accessToken}`)
@@ -339,6 +339,6 @@ describe('integrated feature API', () => {
     const resubmitted = await submitKyc(alice, { front: 'new-front', back: 'new-back' })
     assert.equal(resubmitted.status, 201)
     assert.equal(resubmitted.body.kycRecord.status, 'PENDING')
-    delete process.env.KYC_REVIEWER_USER_IDS
+    delete process.env.KYC_REVIEWER_EMAILS
   })
 })

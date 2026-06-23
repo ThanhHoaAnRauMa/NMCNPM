@@ -9,6 +9,7 @@ Added:
 Changed:
 
 * Message and file history sender payloads now include `kycStatus` so clients can render verified-account indicators consistently.
+* KYC reviewer authorization now uses `KYC_REVIEWER_EMAILS` instead of MongoDB user ids.
 
 Fixed:
 

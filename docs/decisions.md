@@ -175,8 +175,8 @@ This file records decisions that can be inferred from the current implementation
 | Context | KYC submissions need an authority, but the repository has no trusted role bootstrap or external identity provider. |
 | Rationale | A deployment-controlled ObjectId allowlist adds least-privilege review without allowing clients to assign themselves an admin role. |
 | Alternatives Considered | Add a client-writable role field; auto-verify signed hashes. Both allow privilege or trust escalation. |
-| Decision | Protect queue/decision routes with `KYC_REVIEWER_USER_IDS`, prohibit self-review, retain audit metadata, and allow replacement after rejection. |
-| Consequences | Operators must configure reviewer IDs; manual review now uses submitted CCCD images, but authoritative government/OCR/liveness validation remains external. |
+| Decision | Protect queue/decision routes with `KYC_REVIEWER_EMAILS`, prohibit self-review, retain audit metadata, and allow replacement after rejection. |
+| Consequences | Operators must configure reviewer account emails; manual review now uses submitted CCCD images, but authoritative government/OCR/liveness validation remains external. |
 
 ## Document-Backed KYC Gates KYC Mode
 
