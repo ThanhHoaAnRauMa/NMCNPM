@@ -16,6 +16,15 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
   const keyReady = Boolean(identity) && keyStatus === 'ready'
   const kycStatus = String(profile?.kycStatus || 'NONE').toUpperCase()
   const kycReviewLocked = ['PENDING', 'VERIFIED'].includes(kycStatus)
+  const kycPanelMessage = {
+    PENDING: 'Đã gửi hồ sơ KYC. Hồ sơ đang chờ reviewer đối chiếu và duyệt.',
+    VERIFIED: 'Tài khoản đã xác minh KYC thành công. Bạn có thể dùng KYC mode.',
+    REJECTED: 'Hồ sơ KYC trước đó đã bị từ chối. Bạn có thể chỉnh thông tin và gửi lại.',
+  }[kycStatus]
+  const kycSubmitLabel = {
+    PENDING: 'Đã gửi, đang chờ duyệt',
+    VERIFIED: 'Đã xác minh KYC',
+  }[kycStatus] || 'Ký và gửi hồ sơ KYC'
 
   const kycKeyGuidance = () => {
     if (keyStatus === 'loading') return 'Đang kiểm tra khóa thiết bị, thử lại sau vài giây.'
@@ -192,6 +201,11 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
               </span>
             </div>
             <p className="mt-4 text-sm leading-6 text-slate-400">KYC là tùy chọn sau đăng ký. Reviewer được cấp quyền sẽ đối chiếu thông tin và hai ảnh CCCD lưu private trên Cloudinary. Chỉ tài khoản VERIFIED mới dùng KYC mode.</p>
+            {kycPanelMessage && (
+              <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${kycStatus === 'REJECTED' ? 'border-amber/30 bg-amber/10 text-amber' : 'border-mint/30 bg-mint/10 text-mint'}`}>
+                {kycPanelMessage}
+              </div>
+            )}
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <label className="text-xs font-semibold text-slate-300">Họ và tên<input className="field mt-2" maxLength={120} required value={kycForm.fullName} onChange={(event) => setKycForm({ ...kycForm, fullName: event.target.value })} /></label>
               <label className="text-xs font-semibold text-slate-300">Số CCCD<input className="field mt-2" inputMode="numeric" maxLength={12} minLength={12} pattern="[0-9]{12}" required value={kycForm.citizenId} onChange={(event) => setKycForm({ ...kycForm, citizenId: event.target.value.replace(/\D/g, '') })} /></label>
@@ -201,7 +215,7 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
               <label className="text-xs font-semibold text-slate-300">Ảnh mặt sau<input accept="image/jpeg,image/png,image/webp" className="field mt-2" type="file" onChange={(event) => setKycFiles({ ...kycFiles, back: event.target.files?.[0] || null })} /></label>
             </div>
             {!keyReady && !kycReviewLocked && <p className="mt-3 text-xs leading-5 text-amber">{kycKeyGuidance()}</p>}
-            <button className="btn-primary mt-4" disabled={kycReviewLocked} onClick={submitKyc} type="button">Ký và gửi hồ sơ KYC</button>
+            <button className="btn-primary mt-4" disabled={kycReviewLocked} onClick={submitKyc} type="button">{kycSubmitLabel}</button>
           </section>
 
           {reviewRecords && <section className="panel rounded-2xl p-6 lg:col-span-2">
