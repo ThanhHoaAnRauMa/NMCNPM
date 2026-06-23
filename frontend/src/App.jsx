@@ -193,6 +193,18 @@ export default function App() {
     }
   }
 
+  const handleConversationCreated = async (conversationId) => {
+    setShowArchived(false)
+    try {
+      const payload = await auth.api.get('/chat/conversations')
+      setConversations(visibleConversations(payload.conversations, false))
+      setSelectedId(String(conversationId))
+      setView('chat')
+    } catch (error) {
+      setSystemError(error.message)
+    }
+  }
+
   const updateSessionUser = (user) => {
     auth.setSession({ ...auth.session, user: { ...auth.session.user, ...user, id: user.id || user._id } })
   }
@@ -248,7 +260,7 @@ export default function App() {
         </section>
       </div>
 
-      {showNew && <NewConversationModal api={auth.api} onClose={() => setShowNew(false)} onCreated={async (id) => { await refreshConversations(id); setView('chat') }} />}
+      {showNew && <NewConversationModal api={auth.api} onClose={() => setShowNew(false)} onCreated={handleConversationCreated} />}
     </main>
   )
 }

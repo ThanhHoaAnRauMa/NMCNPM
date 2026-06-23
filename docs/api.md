@@ -54,7 +54,7 @@ Registration compatibility note: clients must send `confirmPassword`. Older regi
 | GET | `/users/:id/pubkey` | None | Read a member public-key bundle |
 | POST | `/users/:id/block` | None | Block user |
 | POST | `/users/:id/unblock` | None | Unblock user |
-| POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find/create by pair and mode; KYC requires both users `VERIFIED`; response includes `roomId` |
+| POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find/create by pair and mode; each user pair has at most one KYC direct conversation and one Privacy direct conversation; recreating an existing direct conversation restores it to the caller's normal list and returns that id; KYC requires both users `VERIFIED`; response includes `roomId` |
 | GET | `/chat/conversations?includeArchived=` | `includeArchived=true` includes user-archived conversations | List member conversations with members, `roomId`, and last message; deleted-for-user conversations stay hidden |
 | GET | `/chat/:conversationId/messages?before=&limit=&includeHidden=` | Limit 1-100 | Cursor history; membership required; `includeHidden=true` restores sender-hidden records for evidence export |
 | PATCH | `/chat/conversations/:conversationId/archive` | `{ archived: true | false }` | Archive/unarchive the conversation for the authenticated user only |

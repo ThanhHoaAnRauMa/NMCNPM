@@ -11,6 +11,7 @@ Added:
 
 Changed:
 
+* Direct chat creation now restores and opens an existing same-mode direct conversation instead of creating another duplicate.
 * Reworked the forensic panel around local evidence packages and Room ID copy/export instead of visible Sepolia wallet actions.
 * Message and file history sender payloads now include `kycStatus` so clients can render verified-account indicators consistently.
 * KYC reviewer authorization now uses `KYC_REVIEWER_EMAILS` instead of MongoDB user ids.
