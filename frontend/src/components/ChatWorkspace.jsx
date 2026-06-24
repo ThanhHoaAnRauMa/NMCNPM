@@ -68,6 +68,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
   const [typingUsers, setTypingUsers] = useState([])
   const [panel, setPanel] = useState(null)
   const [summary, setSummary] = useState(null)
+  const [summaryLoading, setSummaryLoading] = useState(false)
   const [searchKeyword, setSearchKeyword] = useState('')
   const [searchedKeyword, setSearchedKeyword] = useState('')
   const [searchResults, setSearchResults] = useState([])
@@ -126,6 +127,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     setMessages(cachedMessages)
     setError('')
     setSummary(null)
+    setSummaryLoading(false)
     setSearchLoading(false)
     setSearchedKeyword('')
     setSearchResults([])
@@ -340,6 +342,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
   }
 
   const summarize = async () => {
+    if (summaryLoading) return
     setError('')
     if (isPrivacy) {
       setPanel('summary')
@@ -348,6 +351,9 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     }
     const source = messages.filter((message) => /^[a-f0-9]{24}$/i.test(String(message._id)) && message.decrypted && message.msgType !== 'FILE').slice(-100)
     if (!source.length) return setError('Không có tin nhắn đã giải mã và lưu DB để tóm tắt.')
+    setPanel('summary')
+    setSummary(null)
+    setSummaryLoading(true)
     try {
       const payload = await api.post('/ai/summarize', {
         conversationId: conversation._id,
@@ -355,9 +361,10 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
         messages: source.map((message) => ({ messageId: String(message._id), text: message.text })),
       })
       setSummary(payload)
-      setPanel('summary')
     } catch (requestError) {
       setError(requestError.message)
+    } finally {
+      setSummaryLoading(false)
     }
   }
 
@@ -393,7 +400,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
           </div>
           <div className="flex shrink-0 gap-2">
             <button className="btn-secondary" onClick={() => setPanel(panel === 'search' ? null : 'search')}>Tìm kiếm</button>
-            <button className="btn-secondary" onClick={summarize}>AI tóm tắt</button>
+            <button className="btn-secondary" disabled={summaryLoading} onClick={summarize}>{summaryLoading ? 'Đang tóm tắt...' : 'AI tóm tắt'}</button>
           </div>
         </header>
 
@@ -465,7 +472,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
               ))}</div>
             </>
           ) : (
-            <div className="mt-5"><div className="rounded-xl border border-mint/20 bg-mint/5 p-4"><p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{summary?.summary || 'Đang tạo tóm tắt...'}</p></div>{summary && <p className="mt-3 text-[10px] text-slate-600">{summary.messageCount} tin nhắn · {summary.cached ? 'cache' : summary.model}</p>}<p className="mt-5 text-[10px] leading-5 text-amber">Plaintext của các tin đã chọn được gửi tới Gemini khi bạn bấm tóm tắt; nguồn plaintext không được lưu trong Message.</p></div>
+            <div className="mt-5"><div className="rounded-xl border border-mint/20 bg-mint/5 p-4"><p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{summaryLoading ? 'Đang tạo tóm tắt, vui lòng chờ...' : summary?.summary || 'Chưa có tóm tắt.'}</p></div>{summary && <p className="mt-3 text-[10px] text-slate-600">{summary.messageCount} tin nhắn · {summary.cached ? 'cache' : summary.model}</p>}<p className="mt-5 text-[10px] leading-5 text-amber">Plaintext của các tin đã chọn được gửi tới Gemini khi bạn bấm tóm tắt; nguồn plaintext không được lưu trong Message.</p></div>
           )}
         </aside>
       )}

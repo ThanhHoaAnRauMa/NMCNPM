@@ -18,6 +18,7 @@ Changed:
 
 Fixed:
 
+* Showed immediate AI summary loading feedback and disabled repeat clicks while summary generation is in progress.
 * Added short Gemini retries for temporary `UNAVAILABLE/high demand` summary failures and returned clearer summary errors for quota/provider outages.
 * Allowed users to update a submitted KYC profile while it is still pending reviewer approval, with a centered "updated" confirmation.
 * Added `GET /kyc/me` so pending/rejected KYC fields can be reloaded into the profile form after refresh.
