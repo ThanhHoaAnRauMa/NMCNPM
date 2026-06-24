@@ -40,3 +40,33 @@ test('Gemini text generation rejects truncated responses', async () => {
     (error) => error.code === 'AI_TRUNCATED_RESPONSE',
   )
 })
+
+test('Gemini text generation retries temporary provider unavailability', async () => {
+  let attempts = 0
+  const text = await generateGeminiText('summarize this', {
+    apiKey: 'test-api-key',
+    retries: 1,
+    async fetchImpl() {
+      attempts += 1
+      if (attempts === 1) {
+        return {
+          ok: false,
+          status: 503,
+          headers: new Map(),
+          async json() {
+            return { error: { status: 'UNAVAILABLE', message: 'high demand' } }
+          },
+        }
+      }
+      return {
+        ok: true,
+        async json() {
+          return { candidates: [{ content: { parts: [{ text: 'Recovered summary' }] }, finishReason: 'STOP' }] }
+        },
+      }
+    },
+  })
+
+  assert.equal(attempts, 2)
+  assert.equal(text, 'Recovered summary')
+})

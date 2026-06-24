@@ -1,5 +1,6 @@
 export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash'
 export const DEFAULT_GEMINI_TIMEOUT_MS = 10000
+export const DEFAULT_GEMINI_RETRIES = 2
 
 function normalizeTimeout(value, fallback = DEFAULT_GEMINI_TIMEOUT_MS) {
   const parsed = Number(value)
@@ -22,6 +23,29 @@ function extractText(payload) {
     .trim()
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function normalizeRetries(value, fallback = DEFAULT_GEMINI_RETRIES) {
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 0) return fallback
+  return Math.min(parsed, 5)
+}
+
+function parseRetryAfter(value) {
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(seconds * 1000, 3000)
+  return null
+}
+
+function providerErrorCode(status, payload) {
+  const providerStatus = payload?.error?.status
+  if (status === 429 || providerStatus === 'RESOURCE_EXHAUSTED') return 'AI_PROVIDER_RATE_LIMITED'
+  if (status === 503 || providerStatus === 'UNAVAILABLE') return 'AI_PROVIDER_UNAVAILABLE'
+  return 'AI_PROVIDER_ERROR'
+}
+
 export async function generateGeminiText(
   prompt,
   {
@@ -30,6 +54,7 @@ export async function generateGeminiText(
     timeoutMs = normalizeTimeout(process.env.GEMINI_TIMEOUT_MS),
     maxOutputTokens = 768,
     thinkingBudget = 0,
+    retries = normalizeRetries(process.env.GEMINI_RETRIES),
     fetchImpl = globalThis.fetch,
   } = {}
 ) {
@@ -45,13 +70,14 @@ export async function generateGeminiText(
     throw error
   }
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), normalizeTimeout(timeoutMs))
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     model
   )}:generateContent`
 
-  try {
+  for (let attempt = 0; attempt <= normalizeRetries(retries); attempt += 1) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), normalizeTimeout(timeoutMs))
+    try {
     const response = await fetchImpl(endpoint, {
       method: 'POST',
       headers: {
@@ -75,9 +101,18 @@ export async function generateGeminiText(
     })
 
     if (!response.ok) {
+      const payload = await response.json().catch(() => null)
       const error = new Error(`Gemini request failed with status ${response.status}`)
-      error.code = 'AI_PROVIDER_ERROR'
+      error.code = providerErrorCode(response.status, payload)
       error.status = response.status
+      error.providerStatus = payload?.error?.status
+      error.providerMessage = payload?.error?.message
+      const retryAfter = parseRetryAfter(response.headers?.get?.('retry-after'))
+      if (attempt < normalizeRetries(retries) && error.code === 'AI_PROVIDER_UNAVAILABLE') {
+        clearTimeout(timeout)
+        await sleep(retryAfter ?? 500 * (attempt + 1))
+        continue
+      }
       throw error
     }
 
@@ -101,8 +136,14 @@ export async function generateGeminiText(
       timeoutError.code = 'AI_TIMEOUT'
       throw timeoutError
     }
+    if (attempt < normalizeRetries(retries) && error.code === 'AI_PROVIDER_UNAVAILABLE') {
+      clearTimeout(timeout)
+      await sleep(500 * (attempt + 1))
+      continue
+    }
     throw error
   } finally {
     clearTimeout(timeout)
+  }
   }
 }

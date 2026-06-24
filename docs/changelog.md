@@ -18,6 +18,7 @@ Changed:
 
 Fixed:
 
+* Added short Gemini retries for temporary `UNAVAILABLE/high demand` summary failures and returned clearer summary errors for quota/provider outages.
 * Allowed users to update a submitted KYC profile while it is still pending reviewer approval, with a centered "updated" confirmation.
 * Added `GET /kyc/me` so pending/rejected KYC fields can be reloaded into the profile form after refresh.
 * Split KYC proof validation by field, including inline messages for name, CCCD, birth date, address, and document images.

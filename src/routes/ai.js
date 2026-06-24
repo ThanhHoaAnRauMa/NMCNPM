@@ -242,10 +242,16 @@ export function createAiRouter({
     } catch (error) {
       if (error.status) return res.status(error.status).json({ error: error.message })
       if (error.code === 'AI_PROVIDER_NOT_CONFIGURED') {
-        return res.status(503).json({ error: 'ai_provider_not_configured' })
+        return res.status(503).json({ error: 'ai_provider_not_configured', message: 'AI summary is not configured on the server.' })
+      }
+      if (error.code === 'AI_PROVIDER_RATE_LIMITED') {
+        return res.status(503).json({ error: 'ai_provider_rate_limited', message: 'AI summary quota is temporarily exhausted. Try again later or switch Gemini API key.' })
+      }
+      if (error.code === 'AI_PROVIDER_UNAVAILABLE' || error.code === 'AI_TIMEOUT') {
+        return res.status(503).json({ error: 'ai_provider_unavailable', message: 'AI summary provider is temporarily busy. Please try again in a moment.' })
       }
       console.error('AI summarize error', error)
-      return res.status(503).json({ error: 'ai_provider_unavailable' })
+      return res.status(503).json({ error: 'ai_provider_unavailable', message: 'AI summary is temporarily unavailable.' })
     }
   })
 
