@@ -44,9 +44,8 @@ const UserSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-UserSchema.pre("validate", function setNormalizedUsername(next) {
+UserSchema.pre("validate", function setNormalizedUsername() {
   if (this.username) this.usernameLower = this.username.trim().toLowerCase();
-  next();
 });
 
 UserSchema.index(
