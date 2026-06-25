@@ -6,7 +6,7 @@
   "description": "Database and API foundation for Secure Chat Forensics",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test test/backend/*.test.js",
+    "test": "node --test --test-concurrency=1 test/backend/*.test.js",
     "test:integration": "node --test test/backend/integration.test.js",
     "check": "npm test"
   },
