@@ -33,22 +33,37 @@ jobs:
           node --check src/backend/server.js
           find src/backend/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
 
-      - name: Run backend tests
+      - name: Run backend unit tests
         shell: bash
         run: |
           set +e
-          npm test 2>&1 | tee backend-test.log
+          node --test --test-concurrency=1 \
+            test/backend/ai-prompts.test.js \
+            test/backend/ai-route.test.js \
+            test/backend/chat-socket.test.js \
+            test/backend/cloudinary-utils.test.js \
+            test/backend/gemini-client.test.js \
+            test/backend/messages-query.test.js \
+            test/backend/messages-route.test.js \
+            test/backend/models.test.js \
+            test/backend/signature-utils.test.js 2>&1 | tee backend-unit-test.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             {
-              echo "### Backend test failure tail"
+              echo "### Backend unit test failure tail"
               echo
               echo '```text'
-              tail -n 160 backend-test.log
+              tail -n 160 backend-unit-test.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "$status"
+
+      - name: Run backend feature API tests
+        run: node --test test/backend/feature-api.test.js
+
+      - name: Run backend integration tests
+        run: node --test test/backend/integration.test.js
 
       - name: Validate Docker Compose
         run: docker compose config
