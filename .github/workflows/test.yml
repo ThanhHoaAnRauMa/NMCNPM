@@ -34,7 +34,21 @@ jobs:
           find src/backend/src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
 
       - name: Run backend tests
-        run: npm test
+        shell: bash
+        run: |
+          set +e
+          npm test 2>&1 | tee backend-test.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "### Backend test failure tail"
+              echo
+              echo '```text'
+              tail -n 160 backend-test.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
 
       - name: Validate Docker Compose
         run: docker compose config
