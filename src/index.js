@@ -21,7 +21,6 @@ import kycRouter from './backend/src/routes/kyc.routes.js'
 import registerChatSocket from './backend/src/socket/chat.socket.js'
 import authMiddleware from './backend/src/middleware/auth.middleware.js'
 import rateLimitMiddleware from './backend/src/middleware/rateLimit.middleware.js'
-import User from './backend/src/models/User.model.js'
 
 // Environment
 const PORT = process.env.PORT || 3000
@@ -78,15 +77,6 @@ async function start() {
   try {
     await mongoose.connect(MONGO_URI)
     console.log('Connected to MongoDB')
-    await User.init().catch((error) => {
-      console.warn('Could not ensure user indexes:', error.message)
-    })
-    await User.updateMany(
-      { $or: [{ usernameLower: { $exists: false } }, { usernameLower: null }] },
-      [{ $set: { usernameLower: { $toLower: '$username' } } }],
-    ).catch((error) => {
-      console.warn('Could not backfill usernameLower for legacy users:', error.message)
-    })
 
     server.listen(PORT, () => {
       console.log(`Server listening on port ${PORT}`)

@@ -6,7 +6,7 @@ Added:
 
 * Added a shared frontend toast stack for visible success, warning, and error feedback across chat, profile, KYC review, conversation creation, and forensics flows.
 * Expanded the KYC reviewer dashboard with status filters, reload/loading states, record counts, submitter identity details, document previews, reviewed metadata, and disabled duplicate review actions.
-* Added indexed `usernameLower` lookup and startup backfill for faster username login on existing accounts.
+* Added indexed `usernameLower` lookup with login-time legacy fallback/backfill for faster username login.
 
 Changed:
 
