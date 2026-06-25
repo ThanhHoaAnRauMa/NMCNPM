@@ -59,7 +59,7 @@ function HighlightedText({ value = '', keyword = '' }) {
     : <span key={index}>{part.text}</span>)
 }
 
-export default function ChatWorkspace({ api, socket, conversation, currentUser, identity, keyStatus, onConversationActivity, onKeyMismatch }) {
+export default function ChatWorkspace({ api, socket, conversation, currentUser, identity, keyStatus, notify, onConversationActivity, onKeyMismatch }) {
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
@@ -345,12 +345,19 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     if (summaryLoading) return
     setError('')
     if (isPrivacy) {
+      const message = 'Tính năng AI tóm tắt không khả dụng khi sử dụng chế độ Privacy.'
       setPanel('summary')
-      setSummary({ summary: 'Tính năng AI tóm tắt không khả dụng khi sử dụng chế độ Privacy.', messageCount: 0, model: 'local-policy' })
+      setSummary({ summary: message, messageCount: 0, model: 'local-policy' })
+      notify?.(message, { type: 'warning', title: 'AI tóm tắt' })
       return
     }
     const source = messages.filter((message) => /^[a-f0-9]{24}$/i.test(String(message._id)) && message.decrypted && message.msgType !== 'FILE').slice(-100)
-    if (!source.length) return setError('Không có tin nhắn đã giải mã và lưu DB để tóm tắt.')
+    if (!source.length) {
+      const message = 'Không có tin nhắn đã giải mã và lưu DB để tóm tắt.'
+      setError(message)
+      notify?.(message, { type: 'warning', title: 'AI tóm tắt' })
+      return
+    }
     setPanel('summary')
     setSummary(null)
     setSummaryLoading(true)
@@ -363,6 +370,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       setSummary(payload)
     } catch (requestError) {
       setError(requestError.message)
+      notify?.(requestError.message, { type: 'error', title: 'AI tóm tắt' })
     } finally {
       setSummaryLoading(false)
     }
@@ -380,9 +388,12 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     if (!currentRoomId) return
     try {
       await navigator.clipboard.writeText(currentRoomId)
-      setError('Room ID da duoc copy.')
+      setError('Đã copy Room ID.')
+      notify?.('Đã copy Room ID.', { type: 'success' })
     } catch (_error) {
-      setError('Khong the copy Room ID. Hay mo Forensics de copy thu cong.')
+      const message = 'Không thể copy Room ID. Hãy mở Forensics để copy thủ công.'
+      setError(message)
+      notify?.(message, { type: 'error' })
     }
   }
 

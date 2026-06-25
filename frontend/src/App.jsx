@@ -6,6 +6,7 @@ import ForensicsPanel from './components/ForensicsPanel.jsx'
 import NewConversationModal from './components/NewConversationModal.jsx'
 import ProfilePanel from './components/ProfilePanel.jsx'
 import Sidebar from './components/Sidebar.jsx'
+import ToastStack from './components/ToastStack.jsx'
 import { useSession } from './hooks/useSession.js'
 import { API_URL } from './lib/api.js'
 import { generateIdentity } from './lib/crypto.js'
@@ -41,7 +42,19 @@ export default function App() {
   const [showArchived, setShowArchived] = useState(false)
   const [socket, setSocket] = useState(null)
   const [systemError, setSystemError] = useState('')
+  const [toasts, setToasts] = useState([])
   const currentUserId = auth.session?.user?.id || auth.session?.user?._id
+
+  const dismissToast = useCallback((id) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id))
+  }, [])
+
+  const notify = useCallback((message, { type = 'info', title = '', ttl = 4500 } = {}) => {
+    const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`
+    setToasts((current) => [...current, { id, type, title, message }].slice(-5))
+    if (ttl) window.setTimeout(() => dismissToast(id), ttl)
+    return id
+  }, [dismissToast])
 
   const refreshConversations = useCallback(async (preferredId) => {
     if (!auth.session) return
@@ -53,8 +66,9 @@ export default function App() {
       else if (!selectedId && normalized.length) setSelectedId(String(normalized[0]._id))
     } catch (error) {
       setSystemError(error.message)
+      notify(error.message, { type: 'error', title: 'Lỗi hệ thống' })
     }
-  }, [auth.api, auth.session, selectedId, showArchived])
+  }, [auth.api, auth.session, notify, selectedId, showArchived])
 
   useEffect(() => {
     if (!currentUserId) {
@@ -92,6 +106,7 @@ export default function App() {
         setConversations(visibleConversations(payload.conversations, showArchived))
       } catch (error) {
         setSystemError(error.message)
+        notify(error.message, { type: 'error', title: 'Realtime' })
       }
     }
     connection.on('connect_error', (error) => setSystemError(`Realtime: ${error.message}`))
@@ -107,7 +122,7 @@ export default function App() {
       connection.disconnect()
       setSocket(null)
     }
-  }, [auth.api, auth.session?.accessToken, showArchived])
+  }, [auth.api, auth.session?.accessToken, notify, showArchived])
 
   useEffect(() => {
     if (auth.session) refreshConversations()
@@ -132,8 +147,10 @@ export default function App() {
       setServerPublicKey(generated.publicBundle)
       setKeyStatus('ready')
       await refreshConversations(selectedId)
+      notify('Đã tạo khóa thiết bị.', { type: 'success' })
     } catch (error) {
       setSystemError(`Không tạo được khóa thiết bị: ${error.message}`)
+      notify(`Không tạo được khóa thiết bị: ${error.message}`, { type: 'error' })
     }
   }
 
@@ -144,6 +161,7 @@ export default function App() {
     setServerPublicKey(restored.publicBundle)
     setKeyStatus('ready')
     await refreshConversations(selectedId)
+    notify('Đã restore khóa thiết bị và đồng bộ public key.', { type: 'success' })
   }
 
   const synchronizeDeviceIdentity = async () => {
@@ -152,6 +170,7 @@ export default function App() {
     setServerPublicKey(identity.publicBundle)
     setKeyStatus('ready')
     await refreshConversations(selectedId)
+    notify('Đã đồng bộ khóa thiết bị với tài khoản.', { type: 'success' })
   }
 
   const handleKeyMismatch = () => {
@@ -175,8 +194,10 @@ export default function App() {
       await auth.api.patch(`/chat/conversations/${conversationId}/archive`, { archived })
       if (String(selectedId) === String(conversationId) && archived && !showArchived) setSelectedId(null)
       await refreshConversations()
+      notify(archived ? 'Đã lưu trữ cuộc trò chuyện.' : 'Đã bỏ lưu trữ cuộc trò chuyện.', { type: 'success' })
     } catch (error) {
       setSystemError(error.message)
+      notify(error.message, { type: 'error' })
     }
   }
 
@@ -188,8 +209,10 @@ export default function App() {
       setConversations((current) => current.filter((conversation) => String(conversation._id) !== String(conversationId)))
       if (String(selectedId) === String(conversationId)) setSelectedId(null)
       await refreshConversations()
+      notify('Đã xóa cuộc trò chuyện khỏi danh sách của bạn.', { type: 'success' })
     } catch (error) {
       setSystemError(error.message)
+      notify(error.message, { type: 'error' })
     }
   }
 
@@ -202,6 +225,7 @@ export default function App() {
       setView('chat')
     } catch (error) {
       setSystemError(error.message)
+      notify(error.message, { type: 'error' })
     }
   }
 
@@ -253,14 +277,15 @@ export default function App() {
             </div>
           )}
           <div className="min-h-0 flex-1">
-            {view === 'chat' && <ChatWorkspace api={auth.api} conversation={selectedConversation} currentUser={auth.session.user} identity={identity} keyStatus={keyStatus} onConversationActivity={handleConversationActivity} onKeyMismatch={handleKeyMismatch} socket={socket} />}
-            {view === 'profile' && <ProfilePanel api={auth.api} identity={identity} keyStatus={keyStatus} onCreateIdentity={createDeviceIdentity} onProfileChanged={updateSessionUser} onRestoreIdentity={restoreDeviceIdentity} onSynchronizeIdentity={synchronizeDeviceIdentity} userId={currentUserId} />}
-            {view === 'forensics' && <ForensicsPanel api={auth.api} conversations={conversations} currentUser={auth.session.user} identity={identity} />}
+            {view === 'chat' && <ChatWorkspace api={auth.api} conversation={selectedConversation} currentUser={auth.session.user} identity={identity} keyStatus={keyStatus} notify={notify} onConversationActivity={handleConversationActivity} onKeyMismatch={handleKeyMismatch} socket={socket} />}
+            {view === 'profile' && <ProfilePanel api={auth.api} identity={identity} keyStatus={keyStatus} notify={notify} onCreateIdentity={createDeviceIdentity} onProfileChanged={updateSessionUser} onRestoreIdentity={restoreDeviceIdentity} onSynchronizeIdentity={synchronizeDeviceIdentity} userId={currentUserId} />}
+            {view === 'forensics' && <ForensicsPanel api={auth.api} conversations={conversations} currentUser={auth.session.user} identity={identity} notify={notify} />}
           </div>
         </section>
       </div>
 
-      {showNew && <NewConversationModal api={auth.api} onClose={() => setShowNew(false)} onCreated={handleConversationCreated} />}
+      {showNew && <NewConversationModal api={auth.api} notify={notify} onClose={() => setShowNew(false)} onCreated={handleConversationCreated} />}
+      <ToastStack onDismiss={dismissToast} toasts={toasts} />
     </main>
   )
 }

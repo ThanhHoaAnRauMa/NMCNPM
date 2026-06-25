@@ -3,7 +3,7 @@ import KycBadge from './KycBadge.jsx'
 import Modal from './Modal.jsx'
 import { displayName, userId } from '../lib/format.js'
 
-export default function NewConversationModal({ api, onClose, onCreated }) {
+export default function NewConversationModal({ api, notify, onClose, onCreated }) {
   const [kind, setKind] = useState('direct')
   const [mode, setMode] = useState('KYC')
   const [groupName, setGroupName] = useState('')
@@ -21,6 +21,7 @@ export default function NewConversationModal({ api, onClose, onCreated }) {
       setUsers(payload.users)
     } catch (requestError) {
       setError(requestError.message)
+      notify?.(requestError.message, { type: 'error', title: 'Tìm người dùng' })
     }
   }
 
@@ -30,8 +31,18 @@ export default function NewConversationModal({ api, onClose, onCreated }) {
   }
 
   const create = async () => {
-    if (!selected.length) return setError('Chọn ít nhất một người dùng.')
-    if (kind === 'group' && !groupName.trim()) return setError('Nhập tên nhóm.')
+    if (!selected.length) {
+      const message = 'Chọn ít nhất một người dùng.'
+      setError(message)
+      notify?.(message, { type: 'warning' })
+      return
+    }
+    if (kind === 'group' && !groupName.trim()) {
+      const message = 'Nhập tên nhóm.'
+      setError(message)
+      notify?.(message, { type: 'warning' })
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -44,9 +55,11 @@ export default function NewConversationModal({ api, onClose, onCreated }) {
         conversationId = payload.group._id
       }
       await onCreated(conversationId)
+      notify?.('Đã mở cuộc trò chuyện.', { type: 'success' })
       onClose()
     } catch (requestError) {
       setError(requestError.message)
+      notify?.(requestError.message, { type: 'error', title: 'Tạo cuộc trò chuyện' })
     } finally {
       setBusy(false)
     }
@@ -55,14 +68,14 @@ export default function NewConversationModal({ api, onClose, onCreated }) {
   return (
     <Modal title="Cuộc trò chuyện mới" onClose={onClose}>
       <div className="grid grid-cols-2 gap-2 rounded-xl bg-ink/70 p-1">
-        {[["direct", 'Trực tiếp'], ["group", 'Nhóm']].map(([id, label]) => (
-          <button className={`rounded-lg py-2 text-sm font-semibold ${kind === id ? 'bg-white/10 text-paper' : 'text-slate-500'}`} key={id} onClick={() => { setKind(id); setSelected([]) }}>{label}</button>
+        {[['direct', 'Trực tiếp'], ['group', 'Nhóm']].map(([id, label]) => (
+          <button className={`rounded-lg py-2 text-sm font-semibold ${kind === id ? 'bg-white/10 text-paper' : 'text-slate-500'}`} key={id} onClick={() => { setKind(id); setSelected([]) }} type="button">{label}</button>
         ))}
       </div>
       {kind === 'group' && <input className="field mt-4" maxLength={128} placeholder="Tên nhóm" value={groupName} onChange={(event) => setGroupName(event.target.value)} />}
       <div className="mt-4 grid grid-cols-2 gap-2">
-        {[["KYC", 'KYC mode'], ["PRIVACY", 'Privacy mode']].map(([id, label]) => (
-          <button className={`rounded-xl border px-3 py-3 text-xs font-bold ${mode === id ? 'border-mint bg-mint/10 text-mint' : 'border-line text-slate-500'}`} key={id} onClick={() => setMode(id)}>{label}</button>
+        {[['KYC', 'KYC mode'], ['PRIVACY', 'Privacy mode']].map(([id, label]) => (
+          <button className={`rounded-xl border px-3 py-3 text-xs font-bold ${mode === id ? 'border-mint bg-mint/10 text-mint' : 'border-line text-slate-500'}`} key={id} onClick={() => setMode(id)} type="button">{label}</button>
         ))}
       </div>
       <form className="mt-5 flex gap-2" onSubmit={search}>
@@ -73,7 +86,7 @@ export default function NewConversationModal({ api, onClose, onCreated }) {
         {users.map((user) => {
           const active = selected.some((item) => userId(item) === userId(user))
           return (
-            <button className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${active ? 'border-mint bg-mint/10' : 'border-line bg-white/[.025]'}`} key={userId(user)} onClick={() => toggle(user)}>
+            <button className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${active ? 'border-mint bg-mint/10' : 'border-line bg-white/[.025]'}`} key={userId(user)} onClick={() => toggle(user)} type="button">
               <span className="min-w-0">
                 <strong className="flex items-center gap-1.5 text-sm">
                   <span className="truncate">{displayName(user)}</span>
@@ -87,7 +100,7 @@ export default function NewConversationModal({ api, onClose, onCreated }) {
         })}
       </div>
       {error && <p className="mt-4 rounded-xl bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
-      <button className="btn-primary mt-6 w-full" disabled={busy} onClick={create}>{busy ? 'Đang tạo...' : kind === 'direct' ? 'Bắt đầu trò chuyện' : 'Tạo nhóm'}</button>
+      <button className="btn-primary mt-6 w-full" disabled={busy} onClick={create} type="button">{busy ? 'Đang tạo...' : kind === 'direct' ? 'Bắt đầu trò chuyện' : 'Tạo nhóm'}</button>
     </Modal>
   )
 }

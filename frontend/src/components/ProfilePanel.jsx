@@ -1,14 +1,39 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import KycBadge from './KycBadge.jsx'
 import { createKycDocumentProof } from '../lib/crypto.js'
 import { createIdentityBackup, restoreIdentityBackup } from '../lib/keyBackup.js'
 
-export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentity, onProfileChanged, onRestoreIdentity, onSynchronizeIdentity, userId }) {
+const REVIEW_FILTERS = [
+  ['PENDING', 'Chờ duyệt'],
+  ['VERIFIED', 'Đã duyệt'],
+  ['REJECTED', 'Từ chối'],
+]
+
+function formatDate(value) {
+  if (!value) return 'Chưa có'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? 'Chưa có' : date.toLocaleString('vi-VN')
+}
+
+export default function ProfilePanel({
+  api,
+  identity,
+  keyStatus,
+  notify,
+  onCreateIdentity,
+  onProfileChanged,
+  onRestoreIdentity,
+  onSynchronizeIdentity,
+  userId,
+}) {
   const [profile, setProfile] = useState(null)
   const [form, setForm] = useState({ displayName: '', avatarUrl: '' })
   const [kycForm, setKycForm] = useState({ fullName: '', citizenId: '', dateOfBirth: '', address: '' })
   const [kycFiles, setKycFiles] = useState({ front: null, back: null })
   const [reviewRecords, setReviewRecords] = useState(null)
+  const [reviewFilter, setReviewFilter] = useState('PENDING')
+  const [reviewLoading, setReviewLoading] = useState(false)
+  const [reviewingId, setReviewingId] = useState('')
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
   const [kycDialog, setKycDialog] = useState(null)
@@ -86,20 +111,38 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
   const showKycError = (message) => {
     setError(message)
     setKycDialog({ type: 'error', title: 'Không thể gửi hồ sơ KYC', message })
+    notify?.(message, { type: 'error', title: 'KYC' })
   }
 
   const showKycSuccess = (message) => {
     setNotice(message)
     setKycDialog({ type: 'success', title: 'Đã gửi hồ sơ KYC', message })
+    notify?.(message, { type: 'success', title: 'KYC' })
   }
+
+  const loadReviews = useCallback(async (status = reviewFilter) => {
+    setReviewLoading(true)
+    try {
+      const payload = await api.get(`/kyc/reviews?status=${encodeURIComponent(status)}`)
+      setReviewRecords(payload.records)
+    } catch (requestError) {
+      if (requestError.status === 403) setReviewRecords(null)
+      else {
+        setError(requestError.message)
+        notify?.(requestError.message, { type: 'error', title: 'Reviewer' })
+      }
+    } finally {
+      setReviewLoading(false)
+    }
+  }, [api, notify, reviewFilter])
 
   useEffect(() => {
     api.get('/users/me').then(({ user }) => {
       setProfile(user)
       setForm({ displayName: user.displayName || '', avatarUrl: user.avatarUrl || '' })
-    }).catch((requestError) => setError(requestError.message))
-    api.get('/kyc/reviews').then(({ records }) => setReviewRecords(records)).catch((requestError) => {
-      if (requestError.status !== 403) setError(requestError.message)
+    }).catch((requestError) => {
+      setError(requestError.message)
+      notify?.(requestError.message, { type: 'error', title: 'Hồ sơ' })
     })
     api.get('/kyc/me').then(({ kycRecord }) => {
       if (!kycRecord) return
@@ -110,9 +153,16 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
         address: kycRecord.address || '',
       })
     }).catch((requestError) => {
-      if (requestError.status !== 404) setError(requestError.message)
+      if (requestError.status !== 404) {
+        setError(requestError.message)
+        notify?.(requestError.message, { type: 'error', title: 'KYC' })
+      }
     })
-  }, [api])
+  }, [api, notify])
+
+  useEffect(() => {
+    loadReviews(reviewFilter)
+  }, [loadReviews, reviewFilter])
 
   const save = async (event) => {
     event.preventDefault()
@@ -122,8 +172,10 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
       setProfile(payload.user)
       onProfileChanged(payload.user)
       setNotice('Đã cập nhật hồ sơ.')
+      notify?.('Đã cập nhật hồ sơ.', { type: 'success' })
     } catch (requestError) {
       setError(requestError.message)
+      notify?.(requestError.message, { type: 'error', title: 'Hồ sơ' })
     }
   }
 
@@ -147,6 +199,7 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
       showKycSuccess(wasPending || payload.updated ? 'Đã cập nhật hồ sơ KYC. Hồ sơ đang chờ reviewer đối chiếu.' : 'Hồ sơ KYC đã gửi và đang chờ reviewer đối chiếu.')
       setKycFieldErrors({})
       setKycFiles({ front: null, back: null })
+      if (reviewRecords) loadReviews(reviewFilter)
     } catch (requestError) {
       showKycError(requestError.message)
     }
@@ -155,19 +208,25 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
   const reviewKyc = async (recordId, status) => {
     const rejectionReason = status === 'REJECTED' ? window.prompt('Lý do từ chối (ít nhất 5 ký tự):') : ''
     if (status === 'REJECTED' && (!rejectionReason || rejectionReason.trim().length < 5)) return
+    setReviewingId(recordId)
     try {
       await api.patch(`/kyc/reviews/${recordId}`, { status, rejectionReason })
-      setReviewRecords((records) => records.filter((record) => record._id !== recordId))
-      setNotice(`Đã cập nhật hồ sơ thành ${status}.`)
+      await loadReviews(reviewFilter)
+      const message = status === 'VERIFIED' ? 'Đã duyệt hồ sơ KYC.' : 'Đã từ chối hồ sơ KYC.'
+      setNotice(message)
+      notify?.(message, { type: 'success', title: 'Reviewer' })
     } catch (requestError) {
       setError(requestError.message)
+      notify?.(requestError.message, { type: 'error', title: 'Reviewer' })
+    } finally {
+      setReviewingId('')
     }
   }
 
   const exportBackup = async () => {
     setError('')
     try {
-      if (!identity) throw new Error('No device identity is available to back up.')
+      if (!identity) throw new Error('Không có khóa thiết bị để backup.')
       const contents = await createIdentityBackup(userId, identity, backupPassword)
       const url = URL.createObjectURL(new Blob([contents], { type: 'application/json' }))
       const anchor = document.createElement('a')
@@ -175,9 +234,11 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
       anchor.download = `secure-chat-key-${userId}.json`
       anchor.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
-      setNotice('Encrypted key backup created. Store the file and password separately.')
+      setNotice('Đã tạo file backup khóa. Hãy lưu file và mật khẩu ở hai nơi riêng.')
+      notify?.('Đã tạo file backup khóa.', { type: 'success' })
     } catch (backupError) {
       setError(backupError.message)
+      notify?.(backupError.message, { type: 'error', title: 'Backup' })
     }
   }
 
@@ -189,9 +250,11 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
     try {
       const restored = await restoreIdentityBackup(await file.text(), backupPassword, userId)
       await onRestoreIdentity(restored)
-      setNotice('Device identity restored and public key synchronized.')
+      setNotice('Đã restore khóa thiết bị và đồng bộ public key.')
+      notify?.('Đã restore khóa thiết bị.', { type: 'success' })
     } catch (backupError) {
       setError(backupError.message)
+      notify?.(backupError.message, { type: 'error', title: 'Restore' })
     }
   }
 
@@ -203,6 +266,7 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
       setNotice('Đã đồng bộ public key của thiết bị này với tài khoản.')
     } catch (syncError) {
       setError(syncError.message)
+      notify?.(syncError.message, { type: 'error', title: 'Device key' })
     }
   }
 
@@ -265,8 +329,8 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
           <section className="panel rounded-2xl p-6 lg:col-span-2">
             <p className="eyebrow">Encrypted recovery</p>
             <h3 className="mt-2 text-xl font-bold">Device-key backup</h3>
-            <p className="mt-3 text-xs leading-5 text-slate-400">The private identity is encrypted locally with PBKDF2 and AES-GCM. The backup and password are never sent to the API.</p>
-            <label className="mt-5 block text-xs font-semibold text-slate-300">Backup password<input className="field mt-2" minLength={12} placeholder="At least 12 characters" type="password" value={backupPassword} onChange={(event) => setBackupPassword(event.target.value)} /></label>
+            <p className="mt-3 text-xs leading-5 text-slate-400">Private identity được mã hóa cục bộ bằng PBKDF2 và AES-GCM. File backup và mật khẩu không được gửi tới API.</p>
+            <label className="mt-5 block text-xs font-semibold text-slate-300">Mật khẩu backup<input className="field mt-2" minLength={12} placeholder="Ít nhất 12 ký tự" type="password" value={backupPassword} onChange={(event) => setBackupPassword(event.target.value)} /></label>
             <input ref={backupInput} className="hidden" accept="application/json,.json" type="file" onChange={importBackup} />
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <button className="btn-secondary" disabled={!identity || backupPassword.length < 12} onClick={exportBackup} type="button">Export encrypted backup</button>
@@ -301,21 +365,68 @@ export default function ProfilePanel({ api, identity, keyStatus, onCreateIdentit
           </section>
 
           {reviewRecords && <section className="panel rounded-2xl p-6 lg:col-span-2">
-            <p className="eyebrow">Reviewer queue</p><h3 className="mt-2 text-xl font-bold">Hồ sơ KYC chờ duyệt</h3>
-            <div className="mt-5 space-y-4">{reviewRecords.length === 0 ? <p className="text-sm text-slate-500">Không có hồ sơ đang chờ.</p> : reviewRecords.map((record) => <article className="rounded-xl border border-line p-4" key={record._id}>
-              <div className="rounded-xl border border-mint/20 bg-mint/5 p-3 text-xs leading-5 text-slate-300">
-                <p className="font-bold uppercase tracking-wider text-mint">Tài khoản gửi</p>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  <span><strong className="text-paper">Email:</strong> {record.userId?.email || 'Không có email'}</span>
-                  <span><strong className="text-paper">Username:</strong> @{record.userId?.username || 'unknown'}</span>
-                  <span><strong className="text-paper">Tên hiển thị:</strong> {record.userId?.displayName || 'Chưa đặt'}</span>
-                  <span><strong className="text-paper">Trạng thái:</strong> {record.userId?.kycStatus || 'UNKNOWN'}</span>
-                </div>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="eyebrow">Reviewer dashboard</p>
+                <h3 className="mt-2 text-xl font-bold">Duyệt hồ sơ KYC</h3>
+                <p className="mt-2 text-xs leading-5 text-slate-500">Chỉ reviewer trong biến `KYC_REVIEWER_EMAILS` nhìn thấy khu vực này.</p>
               </div>
-              <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2"><strong>{record.fullName || 'Legacy proof'}</strong><span>{record.citizenId || 'Không có số CCCD'}</span><span>{record.dateOfBirth ? new Date(record.dateOfBirth).toLocaleDateString('vi-VN') : ''}</span><span>{record.address}</span></div>
-              {record.documents ? <div className="mt-4 grid gap-3 sm:grid-cols-2"><a href={record.documents.frontUrl} rel="noreferrer" target="_blank"><img alt="CCCD mặt trước" className="max-h-64 w-full rounded-lg object-contain" src={record.documents.frontUrl} /></a><a href={record.documents.backUrl} rel="noreferrer" target="_blank"><img alt="CCCD mặt sau" className="max-h-64 w-full rounded-lg object-contain" src={record.documents.backUrl} /></a></div> : <p className="mt-3 text-xs text-amber">Legacy proof không có ảnh; nên từ chối và yêu cầu gửi lại.</p>}
-              <div className="mt-4 flex gap-2"><button className="btn-primary" disabled={!record.documents} onClick={() => reviewKyc(record._id, 'VERIFIED')}>Duyệt</button><button className="btn-secondary" onClick={() => reviewKyc(record._id, 'REJECTED')}>Từ chối</button></div>
-            </article>)}</div>
+              <button className="btn-secondary" disabled={reviewLoading} onClick={() => loadReviews(reviewFilter)} type="button">{reviewLoading ? 'Đang tải...' : 'Tải lại'}</button>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              {REVIEW_FILTERS.map(([id, label]) => (
+                <button className={`rounded-xl border px-3 py-3 text-xs font-bold ${reviewFilter === id ? 'border-mint bg-mint/10 text-mint' : 'border-line text-slate-500'}`} key={id} onClick={() => setReviewFilter(id)} type="button">
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 rounded-xl border border-line bg-ink/50 px-4 py-3 text-xs text-slate-400">
+              Đang xem: <strong className="text-paper">{reviewFilter}</strong> · Số hồ sơ: <strong className="text-paper">{reviewRecords.length}</strong>
+            </div>
+            <div className="mt-5 space-y-4">
+              {reviewLoading && <p className="text-sm text-slate-500">Đang tải hồ sơ...</p>}
+              {!reviewLoading && reviewRecords.length === 0 && <p className="text-sm text-slate-500">Không có hồ sơ trong bộ lọc này.</p>}
+              {!reviewLoading && reviewRecords.map((record) => {
+                const hasDocuments = Boolean(record.documents?.frontUrl && record.documents?.backUrl)
+                const isBusy = reviewingId === record._id
+                return (
+                  <article className="rounded-xl border border-line p-4" key={record._id}>
+                    <div className="rounded-xl border border-mint/20 bg-mint/5 p-3 text-xs leading-5 text-slate-300">
+                      <p className="font-bold uppercase tracking-wider text-mint">Tài khoản gửi</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <span><strong className="text-paper">Email:</strong> {record.userId?.email || 'Không có email'}</span>
+                        <span><strong className="text-paper">Username:</strong> @{record.userId?.username || 'unknown'}</span>
+                        <span><strong className="text-paper">Tên hiển thị:</strong> {record.userId?.displayName || 'Chưa đặt'}</span>
+                        <span><strong className="text-paper">Trạng thái user:</strong> {record.userId?.kycStatus || 'UNKNOWN'}</span>
+                        <span><strong className="text-paper">Gửi lúc:</strong> {formatDate(record.createdAt)}</span>
+                        <span><strong className="text-paper">Cập nhật:</strong> {formatDate(record.updatedAt)}</span>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                      <span><strong className="text-paper">Họ tên:</strong> {record.fullName || 'Legacy proof'}</span>
+                      <span><strong className="text-paper">CCCD:</strong> {record.citizenId || 'Không có số CCCD'}</span>
+                      <span><strong className="text-paper">Ngày sinh:</strong> {record.dateOfBirth ? new Date(record.dateOfBirth).toLocaleDateString('vi-VN') : 'Chưa có'}</span>
+                      <span><strong className="text-paper">Địa chỉ:</strong> {record.address || 'Chưa có'}</span>
+                      <span><strong className="text-paper">Trạng thái hồ sơ:</strong> {record.status}</span>
+                      <span><strong className="text-paper">Reviewer:</strong> {record.reviewedBy?.email || 'Chưa duyệt'}</span>
+                    </div>
+                    {hasDocuments ? (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <a href={record.documents.frontUrl} rel="noreferrer" target="_blank"><img alt="CCCD mặt trước" className="max-h-64 w-full rounded-lg object-contain" src={record.documents.frontUrl} /></a>
+                        <a href={record.documents.backUrl} rel="noreferrer" target="_blank"><img alt="CCCD mặt sau" className="max-h-64 w-full rounded-lg object-contain" src={record.documents.backUrl} /></a>
+                      </div>
+                    ) : <p className="mt-3 text-xs text-amber">Legacy proof không có ảnh; nên từ chối và yêu cầu gửi lại.</p>}
+                    {record.rejectionReason && <p className="mt-3 rounded-xl border border-amber/30 bg-amber/10 px-3 py-2 text-xs text-amber">Lý do từ chối: {record.rejectionReason}</p>}
+                    {reviewFilter === 'PENDING' && (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button className="btn-primary" disabled={!hasDocuments || isBusy} onClick={() => reviewKyc(record._id, 'VERIFIED')} type="button">{isBusy ? 'Đang xử lý...' : 'Duyệt'}</button>
+                        <button className="btn-secondary" disabled={isBusy} onClick={() => reviewKyc(record._id, 'REJECTED')} type="button">Từ chối</button>
+                      </div>
+                    )}
+                  </article>
+                )
+              })}
+            </div>
           </section>}
         </div>
       </div>
