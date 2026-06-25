@@ -51,7 +51,7 @@ UserSchema.pre("validate", function setNormalizedUsername(next) {
 
 UserSchema.index(
   { usernameLower: 1 },
-  { unique: true, partialFilterExpression: { usernameLower: { $type: "string" } } },
+  { partialFilterExpression: { usernameLower: { $type: "string" } } },
 );
 
 UserSchema.methods.isLocked = function isLocked() {
