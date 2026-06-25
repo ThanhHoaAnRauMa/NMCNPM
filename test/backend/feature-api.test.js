@@ -132,7 +132,7 @@ describe('integrated feature API', () => {
     assert.equal(duplicateUsername.status, 409)
     assert.equal(duplicateUsername.body.code, 'USERNAME_ALREADY_EXISTS')
 
-    await User.create({ username: 'ALIceLogin', email: 'legacy-case@example.com', password: await bcrypt.hash('different-horse-42', 12) })
+    await User.collection.insertOne({ username: 'ALIceLogin', email: 'legacy-case@example.com', password: await bcrypt.hash('different-horse-42', 12) })
     const legacyCollision = await request(app).post('/auth/login').send({ identifier: 'alicelogin', password: 'different-horse-42' })
     assert.equal(legacyCollision.status, 200)
     assert.equal(legacyCollision.body.user.username, 'ALIceLogin')

@@ -1,10 +1,21 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { API_URL } from '../lib/api.js'
 
 export default function AuthScreen({ authenticate }) {
   const [mode, setMode] = useState('login')
   const [form, setForm] = useState({ username: '', email: '', identifier: '', password: '', confirmPassword: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 5000)
+    fetch(`${API_URL}/health`, { signal: controller.signal }).catch(() => {}).finally(() => window.clearTimeout(timeout))
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [])
 
   const submit = async (event) => {
     event.preventDefault()
@@ -102,7 +113,7 @@ export default function AuthScreen({ authenticate }) {
               </button>
             </form>
 
-            <button className="mt-6 w-full text-center text-sm text-slate-400 hover:text-paper" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>
+            <button className="mt-6 w-full text-center text-sm text-slate-400 hover:text-paper" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }} type="button">
               {mode === 'login' ? 'Chưa có tài khoản? Đăng ký' : 'Đã có tài khoản? Đăng nhập'}
             </button>
           </div>

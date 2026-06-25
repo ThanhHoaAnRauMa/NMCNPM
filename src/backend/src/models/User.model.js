@@ -10,6 +10,12 @@ const UserSchema = new mongoose.Schema(
       minlength: 3,
       maxlength: 64,
     },
+    usernameLower: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      select: false,
+    },
     email: {
       type: String,
       required: true,
@@ -36,6 +42,16 @@ const UserSchema = new mongoose.Schema(
     lockUntil: { type: Date, default: null },
   },
   { timestamps: true },
+);
+
+UserSchema.pre("validate", function setNormalizedUsername(next) {
+  if (this.username) this.usernameLower = this.username.trim().toLowerCase();
+  next();
+});
+
+UserSchema.index(
+  { usernameLower: 1 },
+  { unique: true, partialFilterExpression: { usernameLower: { $type: "string" } } },
 );
 
 UserSchema.methods.isLocked = function isLocked() {

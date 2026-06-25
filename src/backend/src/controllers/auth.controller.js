@@ -11,6 +11,42 @@ function exactCaseInsensitive(value) {
   return new RegExp(`^${escaped}$`, "i");
 }
 
+function normalizeUsername(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function uniqueById(users = []) {
+  return users.filter((user, index, all) => user && all.findIndex((item) => item?._id.toString() === user._id.toString()) === index);
+}
+
+function isLocked(user) {
+  return Boolean(user?.lockUntil && user.lockUntil > new Date());
+}
+
+async function findLoginCandidates(identifier) {
+  const lowerIdentifier = identifier.toLowerCase();
+  const usernameIdentifiers = [identifier];
+  if (identifier.startsWith("@") && identifier.length > 1) usernameIdentifiers.push(identifier.slice(1));
+  const usernameLowers = [...new Set(usernameIdentifiers.map(normalizeUsername).filter(Boolean))];
+
+  const fastOr = usernameLowers.map((usernameLower) => ({ usernameLower }));
+  if (identifier.includes("@")) fastOr.unshift({ email: lowerIdentifier });
+
+  const fastCandidates = fastOr.length
+    ? await User.find({ $or: fastOr }).select("+password +usernameLower").limit(10)
+    : [];
+
+  return { fastCandidates: uniqueById(fastCandidates), usernameIdentifiers };
+}
+
+async function findLegacyUsernameCandidates(usernameIdentifiers, knownCandidates) {
+  const knownIds = new Set(knownCandidates.map((candidate) => candidate._id.toString()));
+  const legacyCandidates = await User.find({
+    $or: usernameIdentifiers.map((username) => ({ username: exactCaseInsensitive(username) })),
+  }).select("+password +usernameLower").limit(10);
+  return legacyCandidates.filter((candidate) => !knownIds.has(candidate._id.toString()));
+}
+
 function publicUser(user) {
   return {
     id: user._id,
@@ -39,9 +75,10 @@ exports.register = async (req, res) => {
       return res.status(400).json({ success: false, message: "Password confirmation does not match.", code: "PASSWORD_MISMATCH" });
     }
 
+    const usernameLower = normalizeUsername(username);
     const existing = await User.findOne({
-      $or: [{ email }, { username: exactCaseInsensitive(username) }],
-    }).select("email username");
+      $or: [{ email }, { usernameLower }, { username: exactCaseInsensitive(username) }],
+    }).select("email username usernameLower");
     if (existing) {
       const code = existing.email === email ? "EMAIL_ALREADY_EXISTS" : "USERNAME_ALREADY_EXISTS";
       return res.status(409).json({ success: false, message: "Email or username already exists.", code });
@@ -69,41 +106,37 @@ exports.login = async (req, res) => {
       return res.status(400).json({ success: false, message: "Username or email and password are required.", code: "MISSING_FIELDS" });
     }
 
-    const usernameIdentifiers = [identifier];
-    if (identifier.startsWith("@") && identifier.length > 1) usernameIdentifiers.push(identifier.slice(1));
-    const [usernameCandidates, emailCandidate] = await Promise.all([
-      User.find({
-        $or: usernameIdentifiers.map((username) => ({ username: exactCaseInsensitive(username) })),
-      }).select("+password").limit(10),
-      identifier.includes("@")
-        ? User.findOne({ email: identifier.toLowerCase() }).select("+password")
-        : null,
-    ]);
-    const candidates = [emailCandidate, ...usernameCandidates]
-      .filter((candidate, index, all) => candidate && all.findIndex((item) => item?._id.toString() === candidate._id.toString()) === index);
-    const exactCandidate = candidates.find((candidate) => (
-      candidate.email === identifier.toLowerCase()
-      || candidate.username === identifier
-      || (identifier.startsWith("@") && candidate.username === identifier.slice(1))
-    ));
-    const orderedCandidates = exactCandidate
-      ? [exactCandidate, ...candidates.filter((candidate) => candidate._id.toString() !== exactCandidate._id.toString())]
-      : candidates;
+    const { fastCandidates, usernameIdentifiers } = await findLoginCandidates(identifier);
 
     let user = null;
     let lockedMatch = null;
-    for (const candidate of orderedCandidates) {
+    for (const candidate of fastCandidates) {
       if (await bcrypt.compare(password, candidate.password)) {
-        if (candidate.isLocked()) lockedMatch = candidate;
+        if (isLocked(candidate)) lockedMatch = candidate;
         else {
           user = candidate;
           break;
         }
       }
     }
+    let candidates = fastCandidates;
 
     if (!user) {
-      const uniquelyLocked = candidates.length === 1 && candidates[0].isLocked() ? candidates[0] : null;
+      const legacyCandidates = await findLegacyUsernameCandidates(usernameIdentifiers, fastCandidates);
+      candidates = uniqueById([...fastCandidates, ...legacyCandidates]);
+      for (const candidate of legacyCandidates) {
+        if (await bcrypt.compare(password, candidate.password)) {
+          if (isLocked(candidate)) lockedMatch = candidate;
+          else {
+            user = candidate;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!user) {
+      const uniquelyLocked = candidates.length === 1 && isLocked(candidates[0]) ? candidates[0] : null;
       if (lockedMatch || uniquelyLocked) {
         const lockedUser = lockedMatch || uniquelyLocked;
         return res.status(423).json({ success: false, message: "Account is temporarily locked.", code: "ACCOUNT_LOCKED", lockUntil: lockedUser.lockUntil });
@@ -120,7 +153,11 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid username, email or password.", code: "INVALID_CREDENTIALS" });
     }
 
-    await User.findByIdAndUpdate(user._id, { loginAttempts: 0, lockUntil: null, isOnline: true });
+    const loginUpdate = { loginAttempts: 0, lockUntil: null, isOnline: true };
+    if (!user.usernameLower) loginUpdate.usernameLower = normalizeUsername(user.username);
+    await User.findByIdAndUpdate(user._id, loginUpdate).catch((updateError) => {
+      if (updateError.code !== 11000) throw updateError;
+    });
     return res.json({ success: true, message: "Login successful.", user: publicUser(user), ...generateTokens(user._id.toString()) });
   } catch (error) {
     console.error("[login]", error);

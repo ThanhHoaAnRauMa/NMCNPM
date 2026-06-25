@@ -6,10 +6,12 @@ Added:
 
 * Added a shared frontend toast stack for visible success, warning, and error feedback across chat, profile, KYC review, conversation creation, and forensics flows.
 * Expanded the KYC reviewer dashboard with status filters, reload/loading states, record counts, submitter identity details, document previews, reviewed metadata, and disabled duplicate review actions.
+* Added indexed `usernameLower` lookup and startup backfill for faster username login on existing accounts.
 
 Changed:
 
 * Cleaned visible Vietnamese UI text in the main app shell, sidebar, profile/KYC, conversation modal, chat summary/copy actions, modal close button, and forensics panel.
+* Warmed up the backend health endpoint from the login screen so Render cold starts happen before users submit credentials when possible.
 
 ## 2026-06-23
 
