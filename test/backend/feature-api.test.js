@@ -67,7 +67,7 @@ after(async () => {
 
 async function register(username, email) {
   const response = await request(app).post('/auth/register').send({ username, email, password: 'correct-horse-42', confirmPassword: 'correct-horse-42' })
-  assert.equal(response.status, 201)
+  assert.equal(response.status, 201, `register ${username}/${email} failed: ${JSON.stringify(response.body)}`)
   return response.body
 }
 

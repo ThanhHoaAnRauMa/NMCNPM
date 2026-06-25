@@ -66,7 +66,7 @@ jobs:
           node --test test/backend/feature-api.test.js 2>&1 | tee backend-feature-test.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
-            tail_output="$(tail -n 80 backend-feature-test.log)"
+            tail_output="$(tail -n 220 backend-feature-test.log)"
             tail_output="${tail_output//'%'/'%25'}"
             tail_output="${tail_output//$'\n'/'%0A'}"
             tail_output="${tail_output//$'\r'/'%0D'}"
@@ -81,7 +81,7 @@ jobs:
           node --test test/backend/integration.test.js 2>&1 | tee backend-integration-test.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
-            tail_output="$(tail -n 80 backend-integration-test.log)"
+            tail_output="$(tail -n 220 backend-integration-test.log)"
             tail_output="${tail_output//'%'/'%25'}"
             tail_output="${tail_output//$'\n'/'%0A'}"
             tail_output="${tail_output//$'\r'/'%0D'}"
