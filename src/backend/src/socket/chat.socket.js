@@ -193,7 +193,7 @@ module.exports = function registerChatSocket(io) {
           return emitValidationError(emitError, "send_message", envelopeValidation, tempId);
         }
 
-        const sender = await User.findById(socket.userId).select("publicKey");
+        const sender = await User.findById(socket.userId).select("publicKey blocklist");
         if (!sender?.publicKey || !await verifyEnvelopeSignature(encryptedContent, signature, sender.publicKey)) {
           return emitError("send_message", "KEY_MISMATCH", "Device key does not match the account public key. Restore or synchronize the device key before sending.", { tempId });
         }
@@ -205,6 +205,9 @@ module.exports = function registerChatSocket(io) {
         if (conversation.type === "DIRECT" || conversation.type === "direct") {
           const receiverId = conversation.members.find((id) => id.toString() !== socket.userId)?.toString();
           const receiver = receiverId ? await User.findById(receiverId).select("blocklist") : null;
+          if (receiverId && sender.blocklist?.some((id) => id.toString() === receiverId)) {
+            return emitError("send_message", "BLOCKED_BY_YOU", "Unblock this user before sending a message.", { tempId });
+          }
           if (receiver?.blocklist?.some((id) => id.toString() === socket.userId)) {
             return emitError("send_message", "BLOCKED_BY_RECEIVER", "The recipient has blocked this sender.", { tempId });
           }
@@ -281,13 +284,16 @@ module.exports = function registerChatSocket(io) {
         if (!envelopeValidation.valid) {
           return emitValidationError(emitError, "send_private_message", envelopeValidation, tempId);
         }
-        const sender = await User.findById(socket.userId).select("publicKey");
+        const sender = await User.findById(socket.userId).select("publicKey blocklist");
         if (!sender?.publicKey || !await verifyEnvelopeSignature(encryptedContent, signature, sender.publicKey)) {
           return emitError("send_private_message", "KEY_MISMATCH", "Device key does not match the account public key. Restore or synchronize the device key before sending.", { tempId });
         }
         if (conversation.type === "DIRECT" || conversation.type === "direct") {
           const receiverId = conversation.members.find((id) => id.toString() !== socket.userId)?.toString();
           const receiver = receiverId ? await User.findById(receiverId).select("blocklist") : null;
+          if (receiverId && sender.blocklist?.some((id) => id.toString() === receiverId)) {
+            return emitError("send_private_message", "BLOCKED_BY_YOU", "Unblock this user before sending a message.", { tempId });
+          }
           if (receiver?.blocklist?.some((id) => id.toString() === socket.userId)) {
             return emitError("send_private_message", "BLOCKED_BY_RECEIVER", "The recipient has blocked this sender.", { tempId });
           }

@@ -1,4 +1,10 @@
-export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '')
+function defaultApiUrl() {
+  if (import.meta.env.DEV) return 'http://localhost:3000'
+  if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin
+  return 'http://localhost:3000'
+}
+
+export const API_URL = (import.meta.env.VITE_API_URL || defaultApiUrl()).replace(/\/$/, '')
 
 export class ApiError extends Error {
   constructor(message, status, payload) {

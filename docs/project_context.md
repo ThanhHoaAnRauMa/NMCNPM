@@ -40,15 +40,15 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | --- | --- |
 | Register with password confirmation, case-insensitive username/email login, refresh, logout, temporary account lock | Implemented |
 | Local device identity and public-key publication | Implemented |
-| User search, profile update, block/unblock | Implemented |
+| User search, profile update, block/unblock | Implemented with direct-chat send/upload enforcement |
 | Mode-specific direct conversations and group administration | Implemented |
-| Realtime conversation sidebar listing | HTTP canonical list plus invited/member message Socket.IO refresh signals, unread badges, and new-message notifications |
+| Realtime conversation sidebar listing | HTTP canonical list plus invited/member message Socket.IO refresh signals, unread badges, sound, and new-message notifications |
 | JWT-authenticated realtime encrypted chat | Implemented |
 | Delivered/seen, typing, missed-message recovery | Implemented |
 | Encrypted attachment upload/download | Implemented with Cloudinary or local private fallback storage |
 | Conversation message search | Full persisted history is decrypted and substring-searched locally; sender/time/jump results implemented |
 | Gemini moderation before encryption | Removed from normal sends so message plaintext does not leave the browser; AI summary remains explicit opt-in |
-| Gemini conversation summary | Explicit client-supplied plaintext, human sender labels, versioned cache, and truncated-response rejection implemented |
+| Gemini conversation summary | Full KYC history is decrypted locally, bounded plaintext is explicitly submitted, human sender labels/versioned cache/truncated-response rejection implemented |
 | Manual KYC review | Signed CCCD fields/images, private Cloudinary or local fallback upload, allowlisted review, resubmission, and KYC-mode enforcement implemented |
 | KYC verified account badge | Implemented in profile, user search, conversation list, chat header, message sender labels, and local search results when `kycStatus` is `VERIFIED` |
 | Device-key recovery | Password-encrypted local export/import implemented; no server key custody |

@@ -65,6 +65,7 @@ function publicUser(user) {
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
     kycStatus: user.kycStatus,
+    blocklist: (user.blocklist || []).map((id) => id.toString()),
   };
 }
 

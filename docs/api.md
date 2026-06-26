@@ -47,14 +47,14 @@ Registration compatibility note: clients must send `confirmPassword`. Older regi
 
 | Method | Path | Body / Query | Purpose |
 | --- | --- | --- | --- |
-| GET | `/users/me` | None | Current profile |
+| GET | `/users/me` | None | Current profile, including the authenticated user's `blocklist` |
 | PUT | `/users/profile` | `{ displayName?, avatarUrl? }` | Update public profile |
 | GET | `/users/search?q=...` | Query length 2-80 | Search username/email/display name |
 | POST | `/users/pubkey` | `{ publicKey }` | Explicitly publish/replace the browser public-key bundle; clients compare it with IndexedDB before sending |
 | GET | `/users/:id/pubkey` | None | Read a member public-key bundle |
-| POST | `/users/:id/block` | None | Block user |
-| POST | `/users/:id/unblock` | None | Unblock user |
-| POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find/create by pair and mode; each user pair has at most one KYC direct conversation and one Privacy direct conversation; recreating an existing direct conversation restores it to the caller's normal list and returns that id; all participants need synchronized public keys, KYC additionally requires both users `VERIFIED`; response includes `roomId` |
+| POST | `/users/:id/block` | None | Block user; returns the updated `blocklist` |
+| POST | `/users/:id/unblock` | None | Unblock user; returns the updated `blocklist` |
+| POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find/create by pair and mode; each user pair has at most one KYC direct conversation and one Privacy direct conversation; recreating an existing direct conversation restores it to the caller's normal list and returns that id; all participants need synchronized public keys, KYC additionally requires both users `VERIFIED`; blocked direct contacts cannot be opened until unblocked; response includes `roomId` |
 | GET | `/chat/conversations?includeArchived=` | `includeArchived=true` includes user-archived conversations | List member conversations with members, `roomId`, last message, and `unreadCount`; deleted-for-user conversations stay hidden |
 | GET | `/chat/:conversationId/messages?before=&limit=&includeHidden=` | Limit 1-100 | Cursor history; membership required; `includeHidden=true` restores sender-hidden records for evidence export |
 | PATCH | `/chat/conversations/:conversationId/archive` | `{ archived: true | false }` | Archive/unarchive the conversation for the authenticated user only |
@@ -135,6 +135,21 @@ Response: `{ "results": [{ messageId, conversationId, senderId, snippet, score, 
 
 ## AI
 
+### `GET /ai/status`
+
+Returns whether Gemini is configured without exposing the API key:
+
+```json
+{
+  "configured": true,
+  "provider": "gemini",
+  "model": "gemini-2.5-flash",
+  "maxSummaryMessages": 100,
+  "maxMessageChars": 4000,
+  "maxTotalChars": 20000
+}
+```
+
 ### `POST /ai/moderate`
 
 Body: `{ "text": "plaintext before encryption" }`, max 4000 chars.
@@ -155,7 +170,7 @@ Body:
 }
 ```
 
-The backend verifies every message belongs to the conversation, resolves sender display labels, removes database identifiers from the prompt, sends explicit plaintext to Gemini, and caches only a complete summary for one hour. A `MAX_TOKENS` response is rejected instead of cached. Maximums are controlled by `AI_MAX_*` variables. Privacy-mode ciphertext is persisted, but AI summary remains unavailable by local policy.
+The frontend fetches the selected KYC conversation history, decrypts messages locally, sends only user-approved plaintext snippets to the backend, and the backend calls Gemini through `GEMINI_API_KEY`. The backend verifies every message belongs to the conversation, resolves sender display labels, removes database identifiers from the prompt, sends explicit plaintext to Gemini, and caches only a complete summary for one hour. A `MAX_TOKENS` response is rejected instead of cached. Maximums are controlled by `AI_MAX_*` variables. Privacy-mode ciphertext is persisted, but AI summary remains unavailable by local policy.
 
 ## Realtime
 

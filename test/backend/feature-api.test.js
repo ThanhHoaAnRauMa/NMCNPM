@@ -324,6 +324,44 @@ describe('integrated feature API', () => {
     assert.equal(blockedMember.body.code, 'KYC_REQUIRED')
   })
 
+  test('blocks and unblocks direct contacts', async () => {
+    const alice = await register('alice', 'alice@example.com')
+    const bob = await register('bobby', 'bob@example.com')
+
+    const blocked = await request(app)
+      .post(`/users/${bob.user.id}/block`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({})
+    assert.equal(blocked.status, 200)
+    assert.deepEqual(blocked.body.blocklist, [bob.user.id])
+
+    const profile = await request(app)
+      .get('/users/me')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(profile.status, 200)
+    assert.deepEqual(profile.body.user.blocklist, [bob.user.id])
+
+    const denied = await request(app)
+      .post(`/users/${bob.user.id}/conversation`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ mode: 'PRIVACY' })
+    assert.equal(denied.status, 403)
+    assert.equal(denied.body.code, 'BLOCKED_BY_YOU')
+
+    const unblocked = await request(app)
+      .post(`/users/${bob.user.id}/unblock`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({})
+    assert.equal(unblocked.status, 200)
+    assert.deepEqual(unblocked.body.blocklist, [])
+
+    const conversation = await request(app)
+      .post(`/users/${bob.user.id}/conversation`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ mode: 'PRIVACY' })
+    assert.equal(conversation.status, 201)
+  })
+
   test('keeps separate KYC and Privacy direct conversations for the same users', async () => {
     const alice = await register('alice', 'alice@example.com')
     const bob = await register('bobby', 'bob@example.com')

@@ -38,6 +38,8 @@ docker compose up --build
 
 The frontend image is a Vite build served by Nginx. `VITE_*` values are build-time values; changing them requires rebuilding the image.
 
+By default the Docker frontend uses the same origin that served the page for API and Socket.IO traffic. Nginx proxies `/auth`, `/users`, `/chat`, `/groups`, `/files`, `/kyc`, `/messages`, `/ai`, `/health`, `/healthz`, and `/socket.io` to the backend container. This means the same image works from `http://localhost:5173`, a LAN address such as `http://192.168.1.10:5173`, or a public domain that forwards to the frontend port. Set `VITE_API_URL` only when the API is intentionally hosted on a different public origin.
+
 ## Environment Variables
 
 | Variable | Required | Purpose |
@@ -50,13 +52,13 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 | `REGISTRATION_OTP_EXPIRES_MINUTES`, `REGISTRATION_OTP_MAX_ATTEMPTS` | No | Defaults `10`, `5` |
 | `PRIVACY_DELIVERY_TTL_HOURS` | No | Hours to retain undelivered Privacy-mode ciphertext, default `24` |
 | `KYC_REVIEWER_EMAILS` | For KYC review | Comma-separated reviewer account emails; keep empty to deny all reviewers |
-| `GEMINI_API_KEY` | For AI | Gemini API key |
+| `GEMINI_API_KEY` | For AI | Google AI Studio / Gemini API key used only by the backend; required for `/ai/summarize` |
 | `GEMINI_MODEL`, `GEMINI_*_TIMEOUT_MS`, `GEMINI_RETRIES`, `AI_MAX_*` | No | AI model, limits, retry count, and timeouts; moderation defaults to 5 seconds and is capped at 10 seconds |
 | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Production files | Encrypted attachment blob storage; when present, also stores KYC documents |
 | `KYC_LOCAL_STORAGE_DIR`, `KYC_DOCUMENT_TOKEN_EXPIRES_IN` | No | Local/dev fallback directory for KYC documents and signed document-link lifetime; Compose persists it in `kyc-documents` |
 | `FILE_LOCAL_STORAGE_DIR`, `FILE_TOKEN_EXPIRES_IN` | No | Local/dev fallback directory for encrypted attachments and signed blob-link lifetime; Compose persists it in `encrypted-files` |
 | `MAX_FILE_SIZE_MB` | No | Default 10 MB |
-| `VITE_API_URL` | Frontend build | Public API/Socket.IO URL |
+| `VITE_API_URL` | Frontend build | Optional public API/Socket.IO URL; leave empty in Compose to use same-origin nginx proxy |
 
 ## Images
 
@@ -88,7 +90,7 @@ The backend syntax step checks `src/backend/server.js` and JavaScript under `src
 
 The deploy workflow conditionally triggers the Render backend after successful CI on `main` using `RENDER_API_KEY` and `RENDER_SERVICE_ID`. Render also watches `main` for automatic deploys. The frontend is built with `VITE_API_URL` set to the production API, and the API allows the production frontend through `CORS_ORIGIN`.
 
-Gemini and Cloudinary are configured on the production backend and have authenticated production smoke coverage. The current frontend forensic flow generates local evidence packages with conversation Room IDs and does not require a public contract address. A production KYC reviewer is allowlisted, and the GitHub `RENDER_API_KEY`/`RENDER_SERVICE_ID` secrets have been validated through a successful manual deploy workflow.
+Gemini and Cloudinary are configured on the production backend and have authenticated production smoke coverage. Locally, set `GEMINI_API_KEY` in `.env`, then run `docker compose up --build -d`; `GET /ai/status` should report `"configured": true`. The current frontend forensic flow generates local evidence packages with conversation Room IDs and does not require a public contract address. A production KYC reviewer is allowlisted, and the GitHub `RENDER_API_KEY`/`RENDER_SERVICE_ID` secrets have been validated through a successful manual deploy workflow.
 
 ## Operational Gaps
 

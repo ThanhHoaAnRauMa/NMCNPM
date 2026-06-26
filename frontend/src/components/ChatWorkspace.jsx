@@ -16,6 +16,8 @@ function uniqueMessages(messages) {
 }
 
 const MESSAGE_CACHE_LIMIT = 200
+const AI_SUMMARY_MESSAGE_LIMIT = 100
+const AI_SUMMARY_TOTAL_CHARS = 20000
 const messageMemory = new Map()
 const QUICK_ICONS = ['👍', '😂', '🔥', '❤️', '✅', '🎉']
 const ATTACHMENT_OPTIONS = [
@@ -94,7 +96,7 @@ function HighlightedText({ value = '', keyword = '' }) {
     : <span key={index}>{part.text}</span>)
 }
 
-export default function ChatWorkspace({ api, socket, conversation, currentUser, identity, keyStatus, notify, onConversationActivity, onKeyMismatch }) {
+export default function ChatWorkspace({ api, socket, blockedUserIds, conversation, currentUser, identity, keyStatus, notify, onConversationActivity, onKeyMismatch, onToggleBlock }) {
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
@@ -122,6 +124,10 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
   const memberById = useMemo(() => new Map(members.map((member) => [userId(member), member])), [members])
 
   const recipients = useMemo(() => members.map((member) => ({ userId: userId(member), publicKey: member.publicKey })).filter((member) => member.userId && member.publicKey), [members])
+  const peer = useMemo(() => conversationPeer(conversation, currentUserId), [conversation, currentUserId])
+  const peerId = userId(peer)
+  const isDirect = conversation && !['GROUP', 'group'].includes(conversation.type)
+  const peerBlocked = Boolean(isDirect && peerId && blockedUserIds?.has(String(peerId)))
 
   const hydrateMessage = async (message) => {
     const sender = typeof message.senderId === 'object' ? message.senderId : memberById.get(userId(message.senderId))
@@ -249,6 +255,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
   }, [api, conversation?._id, socket, identity, currentUserId])
 
   const ensureReady = () => {
+    if (peerBlocked) throw new Error('Bạn đã chặn người dùng này. Bỏ chặn trước khi gửi tin nhắn.')
     if (!identity) throw new Error('Thiết bị chưa có khóa mã hóa.')
     if (keyStatus !== 'ready') throw new Error('Khóa thiết bị không khớp tài khoản. Mở Hồ sơ để restore hoặc đồng bộ trước khi gửi.')
     if (recipients.length !== members.length) throw new Error('Một hoặc nhiều thành viên chưa có public key.')
@@ -406,23 +413,47 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       notify?.(message, { type: 'warning', title: 'AI tóm tắt' })
       return
     }
-    const source = messages.filter((message) => /^[a-f0-9]{24}$/i.test(String(message._id)) && message.decrypted && message.msgType !== 'FILE').slice(-100)
-    if (!source.length) {
-      const message = 'Không có tin nhắn đã giải mã và lưu DB để tóm tắt.'
-      setError(message)
-      notify?.(message, { type: 'warning', title: 'AI tóm tắt' })
-      return
-    }
     setPanel('summary')
     setSummary(null)
     setSummaryLoading(true)
     try {
+      const status = await api.get('/ai/status')
+      if (!status.configured) throw new Error('Backend chưa cấu hình GEMINI_API_KEY. Hãy thêm key Gemini vào .env rồi rebuild Docker.')
+      const rawMessages = await fetchAllConversationMessages(api, conversation._id)
+      const hydrated = []
+      for (let index = 0; index < rawMessages.length; index += 50) {
+        hydrated.push(...await Promise.all(rawMessages.slice(index, index + 50).map(hydrateMessage)))
+      }
+      updateMessages((current) => uniqueMessages([...current, ...hydrated]))
+      const candidates = hydrated
+        .filter((message) => /^[a-f0-9]{24}$/i.test(String(message._id)) && message.decrypted && message.msgType !== 'FILE')
+        .slice(-Math.min(Number(status.maxSummaryMessages) || AI_SUMMARY_MESSAGE_LIMIT, AI_SUMMARY_MESSAGE_LIMIT))
+      const totalLimit = Number(status.maxTotalChars) || AI_SUMMARY_TOTAL_CHARS
+      const messageLimit = Number(status.maxMessageChars) || 4000
+      let totalChars = 0
+      const source = []
+      for (const message of [...candidates].reverse()) {
+        const text = String(message.text || '').slice(0, messageLimit)
+        if (!text.trim()) continue
+        if (totalChars + text.length > totalLimit && source.length) break
+        source.push({ ...message, text: text.slice(0, Math.max(0, totalLimit - totalChars)) })
+        totalChars += source[source.length - 1].text.length
+        if (totalChars >= totalLimit) break
+      }
+      source.reverse()
+      if (!source.length) throw new Error('Không có tin nhắn đã giải mã và lưu DB để tóm tắt.')
       const payload = await api.post('/ai/summarize', {
         conversationId: conversation._id,
         messageIds: source.map((message) => String(message._id)),
-        messages: source.map((message) => ({ messageId: String(message._id), text: message.text })),
+        messages: source.map((message) => ({
+          messageId: String(message._id),
+          senderId: userId(message.senderId),
+          timestamp: message.createdAt || message.timestamp,
+          text: message.text,
+        })),
       })
       setSummary(payload)
+      notify?.(payload.cached ? 'Đã dùng tóm tắt Gemini trong cache.' : 'Đã tạo tóm tắt bằng Gemini.', { type: 'success', title: 'AI tóm tắt' })
     } catch (requestError) {
       setError(requestError.message)
       notify?.(requestError.message, { type: 'error', title: 'AI tóm tắt' })
@@ -436,7 +467,6 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
   }
 
   const otherTyping = typingUsers.map((id) => displayName(memberById.get(id))).join(', ')
-  const peer = conversationPeer(conversation, currentUserId)
   const currentRoomId = roomIdForConversation(conversation)
   const shortRoomId = currentRoomId ? `${currentRoomId.slice(0, 10)}...${currentRoomId.slice(-8)}` : 'Not available'
   const copyRoomId = async () => {
@@ -450,6 +480,9 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       setError(message)
       notify?.(message, { type: 'error' })
     }
+  }
+  const toggleBlockPeer = () => {
+    if (peerId) onToggleBlock?.(peerId, !peerBlocked)
   }
 
   return (
@@ -465,12 +498,14 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
             <p className="mt-1 text-[11px] text-slate-500">{members.length} thành viên · <span className={isPrivacy ? 'text-amber' : 'text-mint'}>{isPrivacy ? 'Privacy / persisted ciphertext' : 'KYC / persisted ciphertext'}</span></p>
           </div>
           <div className="flex shrink-0 gap-2">
+            {isDirect && peerId && <button className={`btn-secondary ${peerBlocked ? 'border-red-400/30 text-red-200' : ''}`} onClick={toggleBlockPeer} type="button">{peerBlocked ? 'Bỏ chặn' : 'Chặn'}</button>}
             <button className="btn-secondary" onClick={() => setPanel(panel === 'search' ? null : 'search')}>Tìm kiếm</button>
             <button className="btn-secondary" disabled={summaryLoading} onClick={summarize}>{summaryLoading ? 'Đang tóm tắt...' : 'AI tóm tắt'}</button>
           </div>
         </header>
 
         {error && <div className="mx-5 mt-3 flex items-start justify-between gap-3 rounded-xl border border-amber/25 bg-amber/10 px-4 py-3 text-xs text-amber sm:mx-7"><span>{error}</span><button onClick={() => setError('')}>×</button></div>}
+        {peerBlocked && <div className="mx-5 mt-3 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-xs text-red-200 sm:mx-7">Bạn đã chặn người dùng này. Bỏ chặn để tiếp tục gửi tin nhắn hoặc tệp.</div>}
 
         <div className="scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-6 sm:px-7">
           {loading && <p className="text-center text-xs text-slate-600">Đang tải ciphertext và giải mã...</p>}
@@ -509,21 +544,21 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <div className="flex flex-wrap gap-1.5">
               {ATTACHMENT_OPTIONS.map((option) => (
-                <button className="grid h-8 min-w-8 place-items-center rounded-lg border border-line px-2 text-[10px] font-bold text-slate-400 transition hover:border-mint/50 hover:text-mint disabled:opacity-40" disabled={sending || keyStatus !== 'ready'} key={option.id} onClick={() => chooseAttachment(option.accept)} title={`Gửi ${option.label} mã hóa`} type="button">
+                <button className="grid h-8 min-w-8 place-items-center rounded-lg border border-line px-2 text-[10px] font-bold text-slate-400 transition hover:border-mint/50 hover:text-mint disabled:opacity-40" disabled={peerBlocked || sending || keyStatus !== 'ready'} key={option.id} onClick={() => chooseAttachment(option.accept)} title={`Gửi ${option.label} mã hóa`} type="button">
                   {option.icon}
                 </button>
               ))}
             </div>
             <div className="flex flex-wrap gap-1.5">
               {QUICK_ICONS.map((icon) => (
-                <button className="grid h-8 w-8 place-items-center rounded-lg border border-line text-sm transition hover:border-amber/60 hover:bg-amber/10 disabled:opacity-40" disabled={sending || keyStatus !== 'ready'} key={icon} onClick={() => insertQuickIcon(icon)} title="Thêm icon vào tin nhắn" type="button">{icon}</button>
+                <button className="grid h-8 w-8 place-items-center rounded-lg border border-line text-sm transition hover:border-amber/60 hover:bg-amber/10 disabled:opacity-40" disabled={peerBlocked || sending || keyStatus !== 'ready'} key={icon} onClick={() => insertQuickIcon(icon)} title="Thêm icon vào tin nhắn" type="button">{icon}</button>
               ))}
             </div>
           </div>
           <div className="flex items-end gap-2 rounded-2xl border border-line bg-ink/70 p-2 focus-within:border-mint/60">
             <input ref={fileInput} className="hidden" type="file" onChange={uploadFile} />
-            <textarea className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-slate-600" maxLength={4000} placeholder={keyStatus === 'ready' ? 'Nhập tin nhắn...' : 'Đồng bộ khóa thiết bị để nhắn tin'} rows={1} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form.requestSubmit() } }} />
-            <button className="btn-primary h-10 shrink-0" disabled={!draft.trim() || sending || keyStatus !== 'ready'} type="submit">{sending ? '...' : 'Gửi'}</button>
+            <textarea className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-slate-600 disabled:text-slate-600" disabled={peerBlocked} maxLength={4000} placeholder={peerBlocked ? 'Đã chặn người dùng này' : keyStatus === 'ready' ? 'Nhập tin nhắn...' : 'Đồng bộ khóa thiết bị để nhắn tin'} rows={1} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form.requestSubmit() } }} />
+            <button className="btn-primary h-10 shrink-0" disabled={peerBlocked || !draft.trim() || sending || keyStatus !== 'ready'} type="submit">{sending ? '...' : 'Gửi'}</button>
           </div>
         </form>
       </section>

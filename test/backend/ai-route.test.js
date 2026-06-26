@@ -33,6 +33,25 @@ function createApp(router) {
   return app
 }
 
+test('GET /ai/status reports Gemini configuration without exposing secrets', async () => {
+  const originalKey = process.env.GEMINI_API_KEY
+  try {
+    process.env.GEMINI_API_KEY = 'test-gemini-key'
+    const router = createAiRouter({ model: 'gemini-test' })
+    const response = await request(createApp(router)).get('/ai/status')
+
+    assert.equal(response.status, 200)
+    assert.equal(response.body.configured, true)
+    assert.equal(response.body.provider, 'gemini')
+    assert.equal(response.body.model, 'gemini-test')
+    assert.equal(response.body.apiKey, undefined)
+    assert.equal(Number.isInteger(response.body.maxSummaryMessages), true)
+  } finally {
+    if (originalKey === undefined) delete process.env.GEMINI_API_KEY
+    else process.env.GEMINI_API_KEY = originalKey
+  }
+})
+
 test('POST /ai/summarize requires opt-in plaintext messages', async () => {
   const router = createAiRouter()
   const response = await request(createApp(router)).post('/ai/summarize').send({

@@ -37,9 +37,19 @@ exports.uploadFile = async (req, res) => {
     if (!envelopeValidation.valid) {
       return res.status(400).json({ success: false, code: envelopeValidation.code, message: envelopeValidation.message });
     }
-    const sender = await User.findById(req.userId).select("publicKey");
+    const sender = await User.findById(req.userId).select("publicKey blocklist");
     if (!sender?.publicKey || !await verifyEnvelopeSignature(encryptedContent, signature, sender.publicKey)) {
       return res.status(409).json({ success: false, code: "KEY_MISMATCH", message: "Device key does not match the account public key. Restore or synchronize the device key before uploading." });
+    }
+    if (conversation.type === "DIRECT" || conversation.type === "direct") {
+      const receiverId = conversation.members.find((id) => id.toString() !== req.userId)?.toString();
+      const receiver = receiverId ? await User.findById(receiverId).select("blocklist") : null;
+      if (receiverId && sender.blocklist?.some((id) => id.toString() === receiverId)) {
+        return res.status(403).json({ success: false, code: "BLOCKED_BY_YOU", message: "Unblock this user before uploading a file." });
+      }
+      if (receiver?.blocklist?.some((id) => id.toString() === req.userId)) {
+        return res.status(403).json({ success: false, code: "BLOCKED_BY_RECEIVER", message: "The recipient has blocked this sender." });
+      }
     }
 
     const uploaded = await fileStorage.uploadEncryptedFile(req.file.buffer, "application/octet-stream");

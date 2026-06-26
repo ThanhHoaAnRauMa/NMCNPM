@@ -159,6 +159,18 @@ export function createAiRouter({
 } = {}) {
   const router = express.Router()
 
+  router.get('/status', (_req, res) => {
+    const configured = Boolean(process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes('replace_with'))
+    return res.json({
+      configured,
+      provider: 'gemini',
+      model,
+      maxSummaryMessages: MAX_SUMMARY_MESSAGES,
+      maxMessageChars: MAX_MESSAGE_TEXT_LENGTH,
+      maxTotalChars: MAX_TOTAL_TEXT_LENGTH,
+    })
+  })
+
   router.post('/summarize', async (req, res) => {
     try {
       const payload = normalizeSummaryPayload(req.body)

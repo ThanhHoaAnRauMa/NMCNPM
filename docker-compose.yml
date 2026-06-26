@@ -59,7 +59,7 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+        VITE_API_URL: ${VITE_API_URL:-}
         VITE_CONTRACT_ADDRESS: ${VITE_CONTRACT_ADDRESS:-}
     restart: unless-stopped
     depends_on:

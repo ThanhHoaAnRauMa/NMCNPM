@@ -16,8 +16,8 @@ The handshake JWT determines `socket.userId`. Emitting `user_online` cannot chan
 | --- | --- | --- |
 | `join_conversation` / `join` | `{ conversationId }` | Membership check, then join room |
 | `leave_conversation` / `leave` | `{ conversationId }` | Leave room |
-| `send_message` | `{ conversationId, encryptedContent, signature, msgType?, replyTo?, tempId? }` | Validate membership/current sender key/KYC eligibility, join room, then persist and broadcast KYC-mode ciphertext |
-| `send_private_message` | `{ conversationId, encryptedContent, signature, tempId }` | Validate the current sender key, persist Privacy-mode ciphertext, then relay/queue it |
+| `send_message` | `{ conversationId, encryptedContent, signature, msgType?, replyTo?, tempId? }` | Validate membership/current sender key/KYC eligibility/direct-contact block state, join room, then persist and broadcast KYC-mode ciphertext |
+| `send_private_message` | `{ conversationId, encryptedContent, signature, tempId }` | Validate the current sender key/direct-contact block state, persist Privacy-mode ciphertext, then relay/queue it |
 | `ack_private_message` | `{ tempId }` | Clear this recipient's queued Privacy ciphertext after local receipt/decryption attempt |
 | `mark_seen` | `{ messageId, conversationId }` | Member-only seen update |
 | `typing` / `stop_typing` | `{ conversationId }` | Relay only after authorized room join |
@@ -54,7 +54,7 @@ After a persisted message or encrypted file is stored, the server also emits `co
 | `MISSING_CONVERSATION_ID`, `MISSING_REQUIRED_FIELDS` | Invalid payload |
 | `NOT_A_MEMBER` | Conversation missing or access denied |
 | `USE_PRIVATE_EVENT`, `INVALID_PRIVACY_CONVERSATION` | Wrong mode/event |
-| `BLOCKED_BY_RECEIVER` | Recipient blocked sender |
+| `BLOCKED_BY_YOU`, `BLOCKED_BY_RECEIVER` | Direct sender has blocked the recipient, or recipient has blocked sender |
 | `MESSAGE_TOO_LARGE` | Encrypted envelope exceeds limit |
 | `SIGNATURE_TOO_LARGE` | Signature exceeds 16 KiB |
 | `KEY_MISMATCH` | Signature does not match the account's current public key; restore or explicitly synchronize the device identity |
@@ -66,7 +66,7 @@ After a persisted message or encrypted file is stored, the server also emits `co
 
 * KYC mode: ciphertext/signature are stored and available through HTTP history/recovery.
 * Privacy mode: ciphertext/signature are stored in `Message` history, then relayed live and queued per recipient while offline or unopened. The delivery queue is deleted on `ack_private_message` or by `PRIVACY_DELIVERY_TTL_HOURS`; AI summary remains unavailable.
-* Attachments use authenticated HTTP upload, then the server emits `new_message` to the room and `conversation_updated` to member user rooms.
+* Attachments use authenticated HTTP upload, direct-contact block validation, then the server emits `new_message` to the room and `conversation_updated` to member user rooms.
 
 ## REST Companion
 

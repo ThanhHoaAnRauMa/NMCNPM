@@ -12,6 +12,14 @@ function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function publicOwnUser(user) {
+  return {
+    ...user,
+    id: user._id,
+    blocklist: (user.blocklist || []).map((id) => id.toString()),
+  };
+}
+
 exports.uploadPublicKey = async (req, res) => {
   try {
     const publicKey = typeof req.body.publicKey === "string" ? req.body.publicKey.trim() : "";
@@ -53,8 +61,10 @@ exports.blockUser = async (req, res) => {
     }
     const target = await User.findById(req.params.id).select("username").lean();
     if (!target) return res.status(404).json({ success: false, message: "User not found." });
-    await User.findByIdAndUpdate(req.userId, { $addToSet: { blocklist: target._id } });
-    return res.json({ success: true, message: `${target.username} was blocked.` });
+    const user = await User.findByIdAndUpdate(req.userId, { $addToSet: { blocklist: target._id } }, { returnDocument: "after" })
+      .select("blocklist")
+      .lean();
+    return res.json({ success: true, message: `${target.username} was blocked.`, blocklist: (user.blocklist || []).map((id) => id.toString()) });
   } catch (error) {
     console.error("[blockUser]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
@@ -64,8 +74,10 @@ exports.blockUser = async (req, res) => {
 exports.unblockUser = async (req, res) => {
   try {
     if (!validId(req.params.id)) return res.status(400).json({ success: false, message: "Invalid user id." });
-    await User.findByIdAndUpdate(req.userId, { $pull: { blocklist: req.params.id } });
-    return res.json({ success: true, message: "User was unblocked." });
+    const user = await User.findByIdAndUpdate(req.userId, { $pull: { blocklist: req.params.id } }, { returnDocument: "after" })
+      .select("blocklist")
+      .lean();
+    return res.json({ success: true, message: "User was unblocked.", blocklist: (user.blocklist || []).map((id) => id.toString()) });
   } catch (error) {
     console.error("[unblockUser]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
@@ -92,9 +104,9 @@ exports.updateProfile = async (req, res) => {
 
 exports.getMyProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.userId).select("-password -loginAttempts -lockUntil -blocklist").lean();
+    const user = await User.findById(req.userId).select("-password -loginAttempts -lockUntil").lean();
     if (!user) return res.status(404).json({ success: false, message: "User not found." });
-    return res.json({ success: true, user: { ...user, id: user._id } });
+    return res.json({ success: true, user: publicOwnUser(user) });
   } catch (error) {
     console.error("[getMyProfile]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
@@ -132,9 +144,12 @@ exports.startDirectConversation = async (req, res) => {
     }
     const otherUser = await User.findById(otherId).select("username displayName avatarUrl kycStatus publicKey blocklist");
     if (!otherUser) return res.status(404).json({ success: false, message: "User not found." });
-    const requester = await User.findById(req.userId).select("kycStatus publicKey").lean();
+    const requester = await User.findById(req.userId).select("kycStatus publicKey blocklist").lean();
     if (!requester?.publicKey || !otherUser.publicKey) {
       return res.status(409).json({ success: false, code: "PUBLIC_KEY_REQUIRED", message: "Both participants must create and synchronize a device key before starting encrypted chat." });
+    }
+    if ((requester.blocklist || []).some((id) => id.toString() === otherId)) {
+      return res.status(403).json({ success: false, code: "BLOCKED_BY_YOU", message: "Unblock this user before starting a conversation." });
     }
     const otherBlocklist = Array.isArray(otherUser.blocklist) ? otherUser.blocklist : [];
     if (otherBlocklist.some((id) => id.toString() === req.userId)) {

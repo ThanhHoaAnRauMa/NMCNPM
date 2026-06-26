@@ -30,6 +30,35 @@ function visibleConversations(conversations = [], showArchived = false) {
   return normalizeConversations(filtered)
 }
 
+let notificationAudioContext
+
+function playNewMessageSound() {
+  try {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext
+    if (!AudioContextCtor) return
+    notificationAudioContext ||= new AudioContextCtor()
+    const context = notificationAudioContext
+    const play = () => {
+      const oscillator = context.createOscillator()
+      const gain = context.createGain()
+      const now = context.currentTime
+      oscillator.type = 'sine'
+      oscillator.frequency.setValueAtTime(880, now)
+      oscillator.frequency.exponentialRampToValueAtTime(1175, now + 0.08)
+      gain.gain.setValueAtTime(0.0001, now)
+      gain.gain.exponentialRampToValueAtTime(0.12, now + 0.015)
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18)
+      oscillator.connect(gain).connect(context.destination)
+      oscillator.start(now)
+      oscillator.stop(now + 0.2)
+    }
+    if (context.state === 'suspended') context.resume().then(play).catch(() => {})
+    else play()
+  } catch (_error) {
+    // Browser audio can be blocked until the user interacts with the page.
+  }
+}
+
 export default function App() {
   const auth = useSession()
   const [identity, setIdentity] = useState(null)
@@ -45,6 +74,7 @@ export default function App() {
   const [toasts, setToasts] = useState([])
   const currentUserId = auth.session?.user?.id || auth.session?.user?._id
   const totalUnread = useMemo(() => conversations.reduce((total, conversation) => total + Number(conversation.unreadCount || 0), 0), [conversations])
+  const blockedUserIds = useMemo(() => new Set((auth.session?.user?.blocklist || []).map(String)), [auth.session?.user?.blocklist])
   const selectedIdRef = useRef(selectedId)
   const showArchivedRef = useRef(showArchived)
   const viewRef = useRef(view)
@@ -76,6 +106,7 @@ export default function App() {
 
   const notifyNewMessage = useCallback((payload = {}) => {
     const message = payload.msgType === 'FILE' ? 'Có tệp mới đã được mã hóa.' : 'Có tin nhắn mới đã được mã hóa.'
+    playNewMessageSound()
     notify(message, { type: 'info', title: 'Tin nhắn mới' })
     if (!('Notification' in window)) return
     if (Notification.permission === 'granted') {
@@ -128,6 +159,7 @@ export default function App() {
         setIdentity(localIdentity || null)
         setServerPublicKey(user.publicKey || null)
         setKeyStatus(resolveIdentityStatus(localIdentity, user.publicKey))
+        auth.setSession({ ...auth.session, user: { ...auth.session.user, ...user, id: user.id || user._id } })
       })
       .catch(() => {
         if (!active) return
@@ -250,6 +282,25 @@ export default function App() {
     ))))
   }, [])
 
+  const handleToggleBlock = async (targetUserId, shouldBlock) => {
+    if (!targetUserId) return
+    setSystemError('')
+    try {
+      const payload = await auth.api.post(`/users/${targetUserId}/${shouldBlock ? 'block' : 'unblock'}`, {})
+      const nextBlocklist = (payload.blocklist || [...blockedUserIds]).map(String).filter((id) => id !== String(targetUserId))
+      if (shouldBlock) nextBlocklist.push(String(targetUserId))
+      auth.setSession({
+        ...auth.session,
+        user: { ...auth.session.user, blocklist: [...new Set(nextBlocklist)] },
+      })
+      notify(shouldBlock ? 'Đã chặn người dùng.' : 'Đã bỏ chặn người dùng.', { type: 'success' })
+      await refreshConversations(selectedId)
+    } catch (error) {
+      setSystemError(error.message)
+      notify(error.message, { type: 'error', title: shouldBlock ? 'Chặn người dùng' : 'Bỏ chặn' })
+    }
+  }
+
   const handleSelectConversation = (id) => {
     setSelectedId(String(id))
     setView('chat')
@@ -317,6 +368,7 @@ export default function App() {
       <div className="mx-auto grid h-full max-w-[1600px] grid-cols-1 overflow-hidden lg:grid-cols-[310px_minmax(0,1fr)]">
         <div className={`${contentOpen ? 'hidden lg:block' : 'block'} min-h-0`}>
           <Sidebar
+            blockedUserIds={blockedUserIds}
             conversations={conversations}
             keyReady={keyStatus === 'ready'}
             onArchive={handleArchiveConversation}
@@ -345,7 +397,7 @@ export default function App() {
             </div>
           )}
           <div className="min-h-0 flex-1">
-            {view === 'chat' && <ChatWorkspace api={auth.api} conversation={selectedConversation} currentUser={auth.session.user} identity={identity} keyStatus={keyStatus} notify={notify} onConversationActivity={handleConversationActivity} onKeyMismatch={handleKeyMismatch} socket={socket} />}
+            {view === 'chat' && <ChatWorkspace api={auth.api} blockedUserIds={blockedUserIds} conversation={selectedConversation} currentUser={auth.session.user} identity={identity} keyStatus={keyStatus} notify={notify} onConversationActivity={handleConversationActivity} onKeyMismatch={handleKeyMismatch} onToggleBlock={handleToggleBlock} socket={socket} />}
             {view === 'profile' && <ProfilePanel api={auth.api} identity={identity} keyStatus={keyStatus} notify={notify} onCreateIdentity={createDeviceIdentity} onProfileChanged={updateSessionUser} onRestoreIdentity={restoreDeviceIdentity} onSynchronizeIdentity={synchronizeDeviceIdentity} userId={currentUserId} />}
             {view === 'forensics' && <ForensicsPanel api={auth.api} conversations={conversations} currentUser={auth.session.user} identity={identity} notify={notify} />}
           </div>

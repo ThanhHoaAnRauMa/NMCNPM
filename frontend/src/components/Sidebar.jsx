@@ -6,6 +6,7 @@ function initials(value) {
 }
 
 export default function Sidebar({
+  blockedUserIds,
   user,
   conversations,
   selectedId,
@@ -62,6 +63,7 @@ export default function Sidebar({
           const active = selectedId === conversation._id && view === 'chat'
           const last = conversation.lastMessage
           const unreadCount = Number(conversation.unreadCount || 0)
+          const blocked = peer && blockedUserIds?.has(String(peer._id || peer.id))
           return (
             <article className={`border-l-2 px-4 py-3 transition ${active ? 'border-mint bg-mint/10' : unreadCount ? 'border-amber bg-amber/10' : 'border-transparent hover:bg-white/[.035]'}`} key={conversation._id}>
               <button className="flex w-full items-center gap-3 text-left" onClick={() => onSelect(conversation._id)} type="button">
@@ -71,6 +73,7 @@ export default function Sidebar({
                     <span className="min-w-0 flex items-center gap-1.5">
                       <span className={`truncate text-sm font-semibold ${unreadCount ? 'text-paper' : ''}`}>{title}</span>
                       <KycBadge user={peer} />
+                      {blocked && <span className="rounded bg-red-400/10 px-1.5 py-0.5 text-[9px] font-bold uppercase text-red-200">Đã chặn</span>}
                     </span>
                     <span className="flex shrink-0 items-center gap-1.5">
                       {unreadCount > 0 && <span className="grid min-w-5 place-items-center rounded-full bg-amber px-1.5 py-0.5 text-[10px] font-black text-ink">{unreadCount > 99 ? '99+' : unreadCount}</span>}

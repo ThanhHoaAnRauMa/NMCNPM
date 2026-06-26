@@ -74,7 +74,7 @@ test('persisted send joins creator before broadcasting when explicit join is sti
         }
       },
     })
-    User.findById = () => ({ select: async (fields) => fields === 'publicKey' ? { publicKey } : { blocklist: [] } })
+    User.findById = () => ({ select: async (fields) => fields.includes('publicKey') ? { publicKey, blocklist: [] } : { blocklist: [] } })
     User.findByIdAndUpdate = async () => null
 
     const io = {
@@ -186,7 +186,7 @@ test('privacy messages are queued as ciphertext for offline recipients and remov
       createdAt: new Date('2026-06-26T08:00:00.000Z'),
       async save() {},
     })
-    User.findById = () => ({ select: async (fields) => fields === 'publicKey' ? { publicKey } : { blocklist: [] } })
+    User.findById = () => ({ select: async (fields) => fields.includes('publicKey') ? { publicKey, blocklist: [] } : { blocklist: [] } })
     User.findByIdAndUpdate = async () => null
     PrivacyDelivery.findOneAndUpdate = async (_query, update) => {
       const delivery = {
