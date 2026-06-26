@@ -18,6 +18,11 @@ function readAtForUser(conversation, userId) {
   return receipt?.lastReadAt || conversation.createdAt || new Date(0);
 }
 
+function clearedAtForUser(conversation, userId) {
+  const receipt = (conversation.clearedFor || []).find((entry) => entry.userId?.toString() === userId);
+  return receipt?.clearedAt || null;
+}
+
 async function unreadCountForConversation(conversation, userId) {
   return Message.countDocuments({
     conversationId: conversation._id,
@@ -42,11 +47,12 @@ exports.getConversations = async (req, res) => {
       .lean();
 
     const publicConversations = await Promise.all(conversations.map(async (conversation) => {
-      const { archivedFor = [], deletedFor: _deletedFor, readBy: _readBy, ...publicConversation } = conversation;
+      const { archivedFor = [], deletedFor: _deletedFor, clearedFor: _clearedFor, readBy: _readBy, ...publicConversation } = conversation;
       return {
         ...publicConversation,
         roomId: publicConversation.roomId || conversationRoomId(publicConversation._id),
         archived: archivedFor.some((id) => id.toString() === req.userId),
+        clearedAt: clearedAtForUser(conversation, req.userId),
         unreadCount: await unreadCountForConversation(conversation, req.userId),
       };
     }));
@@ -113,11 +119,24 @@ exports.deleteConversationForUser = async (req, res) => {
       return res.status(404).json({ success: false, message: "Conversation not found." });
     }
 
+    const now = new Date();
     await Conversation.updateOne(
-      { _id: conversation._id },
-      { $addToSet: { deletedFor: req.userId }, $pull: { archivedFor: req.userId } },
+      { _id: conversation._id, "clearedFor.userId": req.userId },
+      {
+        $set: { "clearedFor.$.clearedAt": now },
+        $addToSet: { deletedFor: req.userId },
+        $pull: { archivedFor: req.userId },
+      },
     );
-    return res.json({ success: true, conversationId: conversation._id, deleted: true });
+    await Conversation.updateOne(
+      { _id: conversation._id, "clearedFor.userId": { $ne: req.userId } },
+      {
+        $push: { clearedFor: { userId: req.userId, clearedAt: now } },
+        $addToSet: { deletedFor: req.userId },
+        $pull: { archivedFor: req.userId },
+      },
+    );
+    return res.json({ success: true, conversationId: conversation._id, deleted: true, clearedAt: now });
   } catch (error) {
     console.error("[deleteConversationForUser]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
@@ -136,6 +155,8 @@ exports.getMessages = async (req, res) => {
     const query = { conversationId: conversation._id };
     if (req.query.includeHidden !== "true") {
       query.$or = [{ deletedForSender: false }, { deletedForSender: { $exists: false } }, { senderId: { $ne: req.userId } }];
+      const clearedAt = clearedAtForUser(conversation, req.userId);
+      if (clearedAt) query.createdAt = { $gt: clearedAt };
     }
 
     if (req.query.before) {

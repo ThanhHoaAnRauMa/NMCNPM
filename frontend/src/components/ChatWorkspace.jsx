@@ -71,6 +71,14 @@ function messageTime(message) {
   return Number.isNaN(value) ? 0 : value
 }
 
+function filterMessagesAfter(messages, clearedAtMs) {
+  if (!clearedAtMs) return messages
+  return messages.filter((message) => {
+    const time = messageTime(message)
+    return !time || time > clearedAtMs
+  })
+}
+
 function normalizeMessages(messages) {
   return uniqueMessages(messages).sort((left, right) => {
     const timeDiff = messageTime(left) - messageTime(right)
@@ -120,6 +128,10 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
   const currentUserId = currentUser.id || currentUser._id
   const isPrivacy = ['PRIVACY', 'Privacy'].includes(conversation?.mode)
   const cacheKey = currentUserId && conversation?._id ? `${currentUserId}:${conversation._id}` : null
+  const clearedAtMs = useMemo(() => {
+    const value = new Date(conversation?.clearedAt || 0).getTime()
+    return Number.isNaN(value) ? 0 : value
+  }, [conversation?.clearedAt])
 
   const members = useMemo(() => conversation?.members || [], [conversation])
   const memberById = useMemo(() => new Map(members.map((member) => [userId(member), member])), [members])
@@ -162,7 +174,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
 
   const updateMessages = (updater) => {
     setMessages((current) => {
-      const next = normalizeMessages(typeof updater === 'function' ? updater(current) : updater)
+      const next = filterMessagesAfter(normalizeMessages(typeof updater === 'function' ? updater(current) : updater), clearedAtMs)
       writeMessageCache(cacheKey, next)
       return next
     })
@@ -177,7 +189,10 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
   useEffect(() => {
     let active = true
     const activeCacheKey = currentUserId && conversation?._id ? `${currentUserId}:${conversation._id}` : null
-    const cachedMessages = readMessageCache(activeCacheKey)
+    const activeClearedAt = new Date(conversation?.clearedAt || 0).getTime()
+    const activeClearedAtMs = Number.isNaN(activeClearedAt) ? 0 : activeClearedAt
+    const cachedMessages = filterMessagesAfter(readMessageCache(activeCacheKey), activeClearedAtMs)
+    writeMessageCache(activeCacheKey, cachedMessages)
     setMessages(cachedMessages)
     scrollToLatestMessage()
     setError('')
@@ -196,7 +211,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
       .then(async (payload) => {
         const hydrated = await Promise.all(payload.messages.map(hydrateMessage))
         if (active) {
-          const merged = normalizeMessages([...cachedMessages, ...hydrated])
+          const merged = filterMessagesAfter(normalizeMessages([...cachedMessages, ...hydrated]), activeClearedAtMs)
           writeMessageCache(activeCacheKey, merged)
           setMessages(merged)
           scrollToLatestMessage()
@@ -268,7 +283,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
     }
   // hydrateMessage intentionally follows the selected conversation snapshot.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, conversation?._id, socket, identity, currentUserId])
+  }, [api, conversation?._id, conversation?.clearedAt, socket, identity, currentUserId])
 
   const ensureReady = () => {
     if (peerBlocked) throw new Error('Bạn đã chặn người dùng này. Bỏ chặn trước khi gửi tin nhắn.')

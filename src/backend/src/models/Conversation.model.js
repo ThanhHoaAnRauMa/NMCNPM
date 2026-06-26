@@ -70,6 +70,12 @@ const ConversationSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    clearedFor: [
+      {
+        userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+        clearedAt: { type: Date, required: true, default: Date.now },
+      },
+    ],
     readBy: [
       {
         userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -90,6 +96,7 @@ ConversationSchema.index({ members: 1, updatedAt: -1 });
 ConversationSchema.index({ type: 1, members: 1 });
 ConversationSchema.index({ type: 1, mode: 1, members: 1 });
 ConversationSchema.index({ "readBy.userId": 1 });
+ConversationSchema.index({ "clearedFor.userId": 1 });
 ConversationSchema.index({ roomId: 1 }, { unique: true, sparse: true });
 
 const Conversation = mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
