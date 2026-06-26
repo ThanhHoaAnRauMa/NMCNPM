@@ -492,6 +492,43 @@ describe('integrated feature API', () => {
     }
   })
 
+  test('tracks unread conversation counts and clears them when read', async () => {
+    const alice = await register('alice', 'alice@example.com')
+    const bob = await register('bob', 'bob@example.com')
+    const conversation = await request(app)
+      .post(`/users/${bob.user.id}/conversation`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ mode: 'PRIVACY' })
+    assert.equal(conversation.status, 201)
+
+    await Message.create({
+      conversationId: conversation.body.conversationId,
+      senderId: bob.user.id,
+      encryptedContent: JSON.stringify({ v: 1, kind: 'text', alg: 'RSA-OAEP-SHA256+A256GCM', iv: Buffer.alloc(12, 1).toString('base64'), keys: { [alice.user.id]: Buffer.alloc(256, 2).toString('base64'), [bob.user.id]: Buffer.alloc(256, 2).toString('base64') }, ciphertext: Buffer.from('cipher').toString('base64') }),
+      signature: 'signed',
+      senderPublicKey: TEST_PUBLIC_KEY,
+      msgType: 'TEXT',
+    })
+
+    const unread = await request(app)
+      .get('/chat/conversations')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(unread.status, 200)
+    assert.equal(unread.body.conversations.find((item) => String(item._id) === String(conversation.body.conversationId)).unreadCount, 1)
+
+    const read = await request(app)
+      .post(`/chat/conversations/${conversation.body.conversationId}/read`)
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({})
+    assert.equal(read.status, 200)
+    assert.equal(read.body.unreadCount, 0)
+
+    const cleared = await request(app)
+      .get('/chat/conversations')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+    assert.equal(cleared.body.conversations.find((item) => String(item._id) === String(conversation.body.conversationId)).unreadCount, 0)
+  })
+
   test('restricts KYC reviews and synchronizes reviewer decisions', async () => {
     const alice = await register('alice', 'alice@example.com')
     const reviewer = await register('reviewer', 'reviewer@example.com')

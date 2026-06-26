@@ -20,6 +20,7 @@ export default function Sidebar({
   keyReady,
   showArchived,
 }) {
+  const totalUnread = conversations.reduce((total, conversation) => total + Number(conversation.unreadCount || 0), 0)
   return (
     <aside className="panel flex h-full min-h-0 flex-col rounded-none border-y-0 border-l-0 lg:rounded-l-3xl lg:border-y lg:border-l">
       <div className="border-b border-line p-5">
@@ -40,7 +41,12 @@ export default function Sidebar({
           ['profile', 'Hồ sơ'],
           ['forensics', 'Forensics'],
         ].map(([id, label]) => (
-          <button className={`flex-1 rounded-lg px-2 py-2 font-semibold transition ${view === id ? 'bg-white/10 text-paper' : 'text-slate-500 hover:text-paper'}`} key={id} onClick={() => onView(id)} type="button">{label}</button>
+          <button className={`flex-1 rounded-lg px-2 py-2 font-semibold transition ${view === id ? 'bg-white/10 text-paper' : 'text-slate-500 hover:text-paper'}`} key={id} onClick={() => onView(id)} type="button">
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <span>{label}</span>
+              {id === 'chat' && totalUnread > 0 && <span className="grid min-w-5 place-items-center rounded-full bg-amber px-1.5 py-0.5 text-[10px] font-black text-ink">{totalUnread > 99 ? '99+' : totalUnread}</span>}
+            </span>
+          </button>
         ))}
       </nav>
 
@@ -55,19 +61,23 @@ export default function Sidebar({
           const title = conversationTitle(conversation, user.id)
           const active = selectedId === conversation._id && view === 'chat'
           const last = conversation.lastMessage
+          const unreadCount = Number(conversation.unreadCount || 0)
           return (
-            <article className={`border-l-2 px-4 py-3 transition ${active ? 'border-mint bg-mint/10' : 'border-transparent hover:bg-white/[.035]'}`} key={conversation._id}>
+            <article className={`border-l-2 px-4 py-3 transition ${active ? 'border-mint bg-mint/10' : unreadCount ? 'border-amber bg-amber/10' : 'border-transparent hover:bg-white/[.035]'}`} key={conversation._id}>
               <button className="flex w-full items-center gap-3 text-left" onClick={() => onSelect(conversation._id)} type="button">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line bg-ink text-xs font-bold text-amber">{initials(title)}</span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
                     <span className="min-w-0 flex items-center gap-1.5">
-                      <span className="truncate text-sm font-semibold">{title}</span>
+                      <span className={`truncate text-sm font-semibold ${unreadCount ? 'text-paper' : ''}`}>{title}</span>
                       <KycBadge user={peer} />
                     </span>
-                    <span className="shrink-0 text-[10px] text-slate-600">{shortTime(last?.createdAt || conversation.updatedAt)}</span>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {unreadCount > 0 && <span className="grid min-w-5 place-items-center rounded-full bg-amber px-1.5 py-0.5 text-[10px] font-black text-ink">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+                      <span className="text-[10px] text-slate-600">{shortTime(last?.createdAt || conversation.updatedAt)}</span>
+                    </span>
                   </span>
-                  <span className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
+                  <span className={`mt-1 flex items-center gap-2 text-[11px] ${unreadCount ? 'font-semibold text-slate-300' : 'text-slate-500'}`}>
                     <span className={`rounded px-1.5 py-0.5 ${['PRIVACY', 'Privacy'].includes(conversation.mode) ? 'bg-amber/10 text-amber' : 'bg-mint/10 text-mint'}`}>
                       {['PRIVACY', 'Privacy'].includes(conversation.mode) ? 'Privacy' : 'KYC'}
                     </span>

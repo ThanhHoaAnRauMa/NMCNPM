@@ -13,6 +13,19 @@ async function requireMembership(conversationId, userId) {
   return Conversation.findOne({ _id: conversationId, members: userId });
 }
 
+function readAtForUser(conversation, userId) {
+  const receipt = (conversation.readBy || []).find((entry) => entry.userId?.toString() === userId);
+  return receipt?.lastReadAt || conversation.createdAt || new Date(0);
+}
+
+async function unreadCountForConversation(conversation, userId) {
+  return Message.countDocuments({
+    conversationId: conversation._id,
+    senderId: { $ne: userId },
+    createdAt: { $gt: readAtForUser(conversation, userId) },
+  });
+}
+
 exports.getConversations = async (req, res) => {
   try {
     const includeArchived = req.query.includeArchived === "true";
@@ -28,19 +41,40 @@ exports.getConversations = async (req, res) => {
       .sort({ updatedAt: -1 })
       .lean();
 
+    const publicConversations = await Promise.all(conversations.map(async (conversation) => {
+      const { archivedFor = [], deletedFor: _deletedFor, readBy: _readBy, ...publicConversation } = conversation;
+      return {
+        ...publicConversation,
+        roomId: publicConversation.roomId || conversationRoomId(publicConversation._id),
+        archived: archivedFor.some((id) => id.toString() === req.userId),
+        unreadCount: await unreadCountForConversation(conversation, req.userId),
+      };
+    }));
+
     return res.json({
       success: true,
-      conversations: conversations.map((conversation) => {
-        const { archivedFor = [], deletedFor: _deletedFor, ...publicConversation } = conversation;
-        return {
-          ...publicConversation,
-          roomId: publicConversation.roomId || conversationRoomId(publicConversation._id),
-          archived: archivedFor.some((id) => id.toString() === req.userId),
-        };
-      }),
+      conversations: publicConversations,
     });
   } catch (error) {
     console.error("[getConversations]", error);
+    return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+exports.markConversationRead = async (req, res) => {
+  try {
+    const conversation = await requireMembership(req.params.conversationId, req.userId);
+    if (!conversation) {
+      return res.status(404).json({ success: false, message: "Conversation not found." });
+    }
+    const now = new Date();
+    const existing = conversation.readBy.find((entry) => entry.userId.toString() === req.userId);
+    if (existing) existing.lastReadAt = now;
+    else conversation.readBy.push({ userId: req.userId, lastReadAt: now });
+    await conversation.save();
+    return res.json({ success: true, conversationId: conversation._id, readAt: now, unreadCount: 0 });
+  } catch (error) {
+    console.error("[markConversationRead]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
   }
 };

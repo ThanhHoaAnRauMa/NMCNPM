@@ -42,7 +42,7 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Local device identity and public-key publication | Implemented |
 | User search, profile update, block/unblock | Implemented |
 | Mode-specific direct conversations and group administration | Implemented |
-| Realtime conversation sidebar listing | HTTP canonical list plus invited/member message Socket.IO refresh signals |
+| Realtime conversation sidebar listing | HTTP canonical list plus invited/member message Socket.IO refresh signals, unread badges, and new-message notifications |
 | JWT-authenticated realtime encrypted chat | Implemented |
 | Delivered/seen, typing, missed-message recovery | Implemented |
 | Encrypted attachment upload/download | Implemented with Cloudinary or local private fallback storage |

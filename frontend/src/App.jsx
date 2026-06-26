@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
 import AuthScreen from './components/AuthScreen.jsx'
 import ChatWorkspace from './components/ChatWorkspace.jsx'
@@ -44,6 +44,10 @@ export default function App() {
   const [systemError, setSystemError] = useState('')
   const [toasts, setToasts] = useState([])
   const currentUserId = auth.session?.user?.id || auth.session?.user?._id
+  const totalUnread = useMemo(() => conversations.reduce((total, conversation) => total + Number(conversation.unreadCount || 0), 0), [conversations])
+  const selectedIdRef = useRef(selectedId)
+  const showArchivedRef = useRef(showArchived)
+  const viewRef = useRef(view)
 
   const dismissToast = useCallback((id) => {
     setToasts((current) => current.filter((toast) => toast.id !== id))
@@ -69,6 +73,46 @@ export default function App() {
       notify(error.message, { type: 'error', title: 'Lỗi hệ thống' })
     }
   }, [auth.api, auth.session, notify, selectedId, showArchived])
+
+  const notifyNewMessage = useCallback((payload = {}) => {
+    const message = payload.msgType === 'FILE' ? 'Có tệp mới đã được mã hóa.' : 'Có tin nhắn mới đã được mã hóa.'
+    notify(message, { type: 'info', title: 'Tin nhắn mới' })
+    if (!('Notification' in window)) return
+    if (Notification.permission === 'granted') {
+      new Notification('Tin nhắn mới', { body: message })
+    } else if (Notification.permission === 'default') {
+      Notification.requestPermission().then((permission) => {
+        if (permission === 'granted') new Notification('Tin nhắn mới', { body: message })
+      }).catch(() => {})
+    }
+  }, [notify])
+
+  const markConversationRead = useCallback(async (conversationId) => {
+    if (!conversationId || !auth.session) return
+    setConversations((current) => current.map((conversation) => (
+      String(conversation._id) === String(conversationId)
+        ? { ...conversation, unreadCount: 0 }
+        : conversation
+    )))
+    try {
+      await auth.api.post(`/chat/conversations/${conversationId}/read`, {})
+    } catch (error) {
+      setSystemError(error.message)
+      notify(error.message, { type: 'error', title: 'Đánh dấu đã xem' })
+    }
+  }, [auth.api, auth.session, notify])
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId
+  }, [selectedId])
+
+  useEffect(() => {
+    showArchivedRef.current = showArchived
+  }, [showArchived])
+
+  useEffect(() => {
+    viewRef.current = view
+  }, [view])
 
   useEffect(() => {
     if (!currentUserId) {
@@ -100,10 +144,20 @@ export default function App() {
       transports: ['websocket', 'polling'],
       reconnectionAttempts: 8,
     })
-    const refreshFromRealtime = async () => {
+    const refreshFromRealtime = async (payload = {}) => {
+      const conversationId = payload.conversationId
+      const fromOtherUser = payload.senderId && String(payload.senderId) !== String(currentUserId)
+      const activeConversation = conversationId && String(conversationId) === String(selectedIdRef.current) && viewRef.current === 'chat'
+      if (conversationId && fromOtherUser && !activeConversation) notifyNewMessage(payload)
       try {
-        const payload = await auth.api.get(`/chat/conversations${showArchived ? '?includeArchived=true' : ''}`)
-        setConversations(visibleConversations(payload.conversations, showArchived))
+        const showArchivedNow = showArchivedRef.current
+        const payload = await auth.api.get(`/chat/conversations${showArchivedNow ? '?includeArchived=true' : ''}`)
+        setConversations(visibleConversations(payload.conversations, showArchivedNow).map((conversation) => (
+          activeConversation && String(conversation._id) === String(conversationId)
+            ? { ...conversation, unreadCount: 0 }
+            : conversation
+        )))
+        if (activeConversation) markConversationRead(conversationId)
       } catch (error) {
         setSystemError(error.message)
         notify(error.message, { type: 'error', title: 'Realtime' })
@@ -122,7 +176,7 @@ export default function App() {
       connection.disconnect()
       setSocket(null)
     }
-  }, [auth.api, auth.session?.accessToken, notify, showArchived])
+  }, [auth.api, auth.session?.accessToken, currentUserId, markConversationRead, notify, notifyNewMessage])
 
   useEffect(() => {
     if (auth.session) refreshConversations()
@@ -133,6 +187,14 @@ export default function App() {
   useEffect(() => {
     if (auth.session) refreshConversations()
   }, [auth.session, refreshConversations, showArchived])
+
+  useEffect(() => {
+    if (auth.session && selectedId && view === 'chat') markConversationRead(selectedId)
+  }, [auth.session, markConversationRead, selectedId, view])
+
+  useEffect(() => {
+    document.title = totalUnread > 0 ? `(${totalUnread}) Secure Chat Forensics` : 'Secure Chat Forensics'
+  }, [totalUnread])
 
   const selectedConversation = useMemo(() => conversations.find((conversation) => String(conversation._id) === String(selectedId)) || null, [conversations, selectedId])
 
@@ -187,6 +249,12 @@ export default function App() {
         : conversation
     ))))
   }, [])
+
+  const handleSelectConversation = (id) => {
+    setSelectedId(String(id))
+    setView('chat')
+    markConversationRead(id)
+  }
 
   const handleArchiveConversation = async (conversationId, archived) => {
     setSystemError('')
@@ -255,7 +323,7 @@ export default function App() {
             onDelete={handleDeleteConversation}
             onLogout={auth.logout}
             onNew={() => setShowNew(true)}
-            onSelect={(id) => { setSelectedId(String(id)); setView('chat') }}
+            onSelect={handleSelectConversation}
             onToggleArchived={() => setShowArchived((current) => !current)}
             onView={(nextView) => setView(nextView)}
             selectedId={selectedId}

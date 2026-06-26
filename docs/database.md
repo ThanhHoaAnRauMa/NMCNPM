@@ -56,6 +56,7 @@ Indexes:
 | `createdBy` | ObjectId -> `User` | No | Creator metadata |
 | `mode` | String enum | No | `KYC`, `PRIVACY` |
 | `lastMessage` | ObjectId -> `Message` | No | Sidebar ordering/preview reference |
+| `readBy` | `{ userId, lastReadAt }[]` | No | Per-user read timestamp used to derive unread conversation counts |
 | `archivedFor` | ObjectId[] -> `User` | No | Users who archived the conversation in their own list |
 | `deletedFor` | ObjectId[] -> `User` | No | Users who hid/deleted the conversation from their own list; records remain |
 | timestamps | Date | Auto | `createdAt`, `updatedAt` |
@@ -67,6 +68,7 @@ Indexes:
 | `{ members: 1, updatedAt: -1 }` | Membership and recent ordering |
 | `{ type: 1, members: 1 }` | Direct/group membership lookup |
 | `{ type: 1, mode: 1, members: 1 }` | Mode-specific direct conversation lookup |
+| `{ "readBy.userId": 1 }` | Read-receipt lookup for unread badges |
 | `{ roomId: 1 }` unique sparse | Evidence package room lookup/display |
 
 ## Message

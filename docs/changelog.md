@@ -6,6 +6,7 @@ Added:
 
 * Added local private KYC document storage fallback with short-lived signed reviewer URLs when Cloudinary credentials are not configured.
 * Added local private encrypted-attachment fallback storage, signed blob URLs, file-type picker buttons, and quick chat icons.
+* Added per-conversation unread counts, sidebar badges, document-title counts, and new-message notifications that clear when the conversation is opened.
 * Added a shared frontend toast stack for visible success, warning, and error feedback across chat, profile, KYC review, conversation creation, and forensics flows.
 * Expanded the KYC reviewer dashboard with status filters, reload/loading states, record counts, submitter identity details, document previews, reviewed metadata, and disabled duplicate review actions.
 * Added indexed `usernameLower` lookup with login-time legacy fallback/backfill for faster username login.

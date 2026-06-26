@@ -241,6 +241,8 @@ module.exports = function registerChatSocket(io) {
         notifyConversationMembers(io, conversation, {
           conversationId,
           lastMessageId: message._id,
+          senderId: socket.userId,
+          msgType: message.msgType,
           updatedAt: message.createdAt,
         });
 
@@ -329,6 +331,8 @@ module.exports = function registerChatSocket(io) {
         notifyConversationMembers(io, conversation, {
           conversationId,
           lastMessageId: message._id,
+          senderId: socket.userId,
+          msgType: message.msgType,
           updatedAt: message.createdAt,
         });
         socket.emit("private_message_sent", { tempId, messageId: message._id, conversationId, createdAt: message.createdAt });

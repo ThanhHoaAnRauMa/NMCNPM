@@ -28,7 +28,7 @@ The handshake JWT determines `socket.userId`. Emitting `user_online` cannot chan
 
 After membership validation, `send_message` ensures the sender socket has joined the conversation room before broadcasting `new_message`. This keeps an immediately sent first message visible to the creator even when the earlier `join_conversation` handler is still completing.
 
-After a persisted message or encrypted file is stored, the server also emits `conversation_updated` to every member's authenticated `user:<id>` room. Clients use this as a refresh signal for the canonical HTTP conversation list, so invited members see new group activity even before they manually open and join that conversation room.
+After a persisted message or encrypted file is stored, the server also emits `conversation_updated` to every member's authenticated `user:<id>` room. Clients use this as a refresh signal for the canonical HTTP conversation list, so invited members see new group activity even before they manually open and join that conversation room. The payload includes the sender and message type so clients can avoid self-notifications and show a useful new-message prompt.
 
 ## Server to Client
 
@@ -42,7 +42,7 @@ After a persisted message or encrypted file is stored, the server also emits `co
 | `user_status` | `userId`, `isOnline`, `lastSeen?`, `reason?` |
 | `user_key_updated` | `userId`; tells conversation participants to refresh member public keys |
 | `conversation_created` | `conversationId`, `type`, `mode`, `createdBy`; tells invited online members to refresh their authenticated conversation list |
-| `conversation_updated` | `conversationId`, `lastMessageId`, `updatedAt`; tells all members to refresh their authenticated conversation list |
+| `conversation_updated` | `conversationId`, `lastMessageId`, `senderId`, `msgType`, `updatedAt`; tells all members to refresh their authenticated conversation list |
 | `missed_messages` | `conversationId`, `messages`, `count` |
 | `socket_error` | `event`, `code`, `message`, optional `tempId` |
 
@@ -70,4 +70,4 @@ After a persisted message or encrypted file is stored, the server also emits `co
 
 ## REST Companion
 
-Use `GET /chat/conversations` for the canonical member conversation list. `conversation_created` and `conversation_updated` are refresh signals only; clients still fetch this authenticated endpoint and also refresh after reconnect to recover events missed while offline. `GET /groups/all` remains available as a compatibility endpoint returning display-oriented conversation metadata. Opening a conversation still requires `join_conversation` followed by `GET /chat/:conversationId/messages`.
+Use `GET /chat/conversations` for the canonical member conversation list, including derived `unreadCount` values. `conversation_created` and `conversation_updated` are refresh signals only; clients still fetch this authenticated endpoint and also refresh after reconnect to recover events missed while offline. `POST /chat/conversations/:conversationId/read` clears the current user's unread count when a conversation is opened. `GET /groups/all` remains available as a compatibility endpoint returning display-oriented conversation metadata. Opening a conversation still requires `join_conversation` followed by `GET /chat/:conversationId/messages`.

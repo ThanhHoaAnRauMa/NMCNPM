@@ -86,7 +86,7 @@ Transcript plaintext in an exported package is for authorized human review; its 
 
 ## Realtime Boundaries
 
-Socket authentication occurs during the handshake with `auth.token`. Each connection joins its authenticated `user:<id>` room so REST conversation creation and persisted message/file sends can notify members to refresh the canonical conversation list immediately. Room join, send, seen, typing, and missed-message operations verify conversation membership. `user_online` no longer controls identity and cannot impersonate another user. The chat workspace also keeps a small per-user/per-conversation in-memory message cache so switching application tabs does not discard already hydrated messages.
+Socket authentication occurs during the handshake with `auth.token`. Each connection joins its authenticated `user:<id>` room so REST conversation creation and persisted message/file sends can notify members to refresh the canonical conversation list immediately. The canonical list includes derived unread counts; opening a conversation stores a per-user read timestamp, clears the badge, and the frontend may show a toast/browser notification for new messages from other users. Room join, send, seen, typing, and missed-message operations verify conversation membership. `user_online` no longer controls identity and cannot impersonate another user. The chat workspace also keeps a small per-user/per-conversation in-memory message cache so switching application tabs does not discard already hydrated messages.
 
 ## Data Ownership
 

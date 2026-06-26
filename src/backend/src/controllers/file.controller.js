@@ -83,6 +83,8 @@ exports.uploadFile = async (req, res) => {
       notifyConversationMembers(io, conversation, {
         conversationId,
         lastMessageId: message._id,
+        senderId: req.userId,
+        msgType: message.msgType,
         updatedAt: message.createdAt,
       });
     }
