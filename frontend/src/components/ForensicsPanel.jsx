@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { decryptText } from '../lib/crypto.js'
+import { DECRYPT_MESSAGES } from '../lib/encryptionMode.js'
 import { createEvidencePackage, roomIdForConversation, verifyEvidencePackage } from '../lib/evidence.js'
 
 export default function ForensicsPanel({ api, conversations, currentUser, identity, notify }) {
@@ -39,11 +40,11 @@ export default function ForensicsPanel({ api, conversations, currentUser, identi
       const selected = selectedConversation
       if (!selected) throw new Error('Chọn một cuộc trò chuyện trước.')
       if (selected.mode === 'PRIVACY') throw new Error('Privacy conversation không lưu evidence log persisted.')
-      if (!identity) throw new Error('Thiết bị này chưa có khóa giải mã.')
+      if (DECRYPT_MESSAGES && !identity) throw new Error('Thiết bị này chưa có khóa giải mã.')
       const messages = await loadAllMessages(selected)
       const hydrated = await Promise.all(messages.map(async (message) => {
         let plaintext = null
-        if (message.msgType !== 'FILE') {
+        if (DECRYPT_MESSAGES && message.msgType !== 'FILE') {
           try { plaintext = await decryptText(message.encryptedContent, currentUserId, identity) } catch (_error) { plaintext = null }
         }
         return { ...message, plaintext }

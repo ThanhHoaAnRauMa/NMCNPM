@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import KycBadge from './KycBadge.jsx'
 import { decryptFile, decryptText, encryptFile, encryptText, verifyPayload } from '../lib/crypto.js'
+import { DECRYPT_MESSAGES, encryptedPreview } from '../lib/encryptionMode.js'
 import { roomIdForConversation } from '../lib/evidence.js'
 import { conversationPeer, conversationTitle, displayName, fileSize, shortTime, userId } from '../lib/format.js'
 import { containsSubstring, fetchAllConversationMessages, highlightSubstring } from '../lib/localMessageSearch.js'
@@ -150,10 +151,12 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
 
   const hydrateMessage = async (message) => {
     const sender = typeof message.senderId === 'object' ? message.senderId : memberById.get(userId(message.senderId))
-    let text = message.msgType === 'FILE' ? 'Tệp đính kèm đã mã hóa' : 'Không thể giải mã trên thiết bị này'
+    let text = message.encryptedContent && !DECRYPT_MESSAGES
+      ? encryptedPreview(message.encryptedContent)
+      : message.msgType === 'FILE' ? 'Tệp đính kèm đã mã hóa' : 'Không thể giải mã trên thiết bị này'
     let decrypted = false
     let verified = null
-    if (identity && message.encryptedContent) {
+    if (DECRYPT_MESSAGES && identity && message.encryptedContent) {
       try {
         if (message.msgType !== 'FILE') text = await decryptText(message.encryptedContent, currentUserId, identity)
         decrypted = true
@@ -307,7 +310,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
       const payload = { conversationId: conversation._id, ...encrypted, msgType: 'TEXT', tempId }
       if (isPrivacy) {
         const optimisticAt = new Date().toISOString()
-        updateMessages((current) => [...current, { _id: tempId, tempId, conversationId: conversation._id, senderId: currentUser, text: plaintext, decrypted: true, verified: true, msgType: 'TEXT', status: 'SENT', createdAt: optimisticAt, timestamp: optimisticAt }])
+        updateMessages((current) => [...current, { _id: tempId, tempId, conversationId: conversation._id, senderId: currentUser, encryptedContent: encrypted.encryptedContent, text: DECRYPT_MESSAGES ? plaintext : encryptedPreview(encrypted.encryptedContent), decrypted: DECRYPT_MESSAGES, verified: true, msgType: 'TEXT', status: 'SENT', createdAt: optimisticAt, timestamp: optimisticAt }])
         onConversationActivity?.(conversation._id, { _id: tempId, tempId, conversationId: conversation._id, senderId: currentUser, msgType: 'TEXT', status: 'SENT', createdAt: optimisticAt, timestamp: optimisticAt })
         socket.emit('send_private_message', payload)
       } else {
@@ -373,6 +376,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
   const openFile = async (message) => {
     setError('')
     try {
+      if (!DECRYPT_MESSAGES) throw new Error('Đang ở chế độ hiển thị ciphertext (VITE_DECRYPT_MESSAGES=false), không giải mã file.')
       if (!identity) throw new Error('Thiết bị không có khóa giải mã.')
       const response = await fetch(message.fileUrl)
       if (!response.ok) throw new Error('Không tải được encrypted blob.')
@@ -526,7 +530,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
               <KycBadge user={peer} />
             </h2>
             <button className="mt-1 block max-w-full truncate font-mono text-[10px] text-slate-600 hover:text-mint" onClick={copyRoomId} title={currentRoomId} type="button">Room ID: {shortRoomId}</button>
-            <p className="mt-1 text-[11px] text-slate-500">{members.length} thành viên · <span className={isPrivacy ? 'text-amber' : 'text-mint'}>{isPrivacy ? 'Privacy / persisted ciphertext' : 'KYC / persisted ciphertext'}</span></p>
+            <p className="mt-1 text-[11px] text-slate-500">{members.length} thành viên · <span className={isPrivacy ? 'text-amber' : 'text-mint'}>{isPrivacy ? 'Privacy / persisted ciphertext' : 'KYC / persisted ciphertext'}</span>{!DECRYPT_MESSAGES && <span className="ml-2 rounded bg-amber/10 px-1.5 py-0.5 font-mono text-amber">ciphertext view</span>}</p>
           </div>
           <div className="flex shrink-0 gap-2">
             {isDirect && peerId && <button className={`btn-secondary ${peerBlocked ? 'border-red-400/30 text-red-200' : ''}`} onClick={toggleBlockPeer} type="button">{peerBlocked ? 'Bỏ chặn' : 'Chặn'}</button>}
@@ -539,7 +543,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
         {peerBlocked && <div className="mx-5 mt-3 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-xs text-red-200 sm:mx-7">Bạn đã chặn người dùng này. Bỏ chặn để tiếp tục gửi tin nhắn hoặc tệp.</div>}
 
         <div className="scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-6 sm:px-7">
-          {loading && <p className="text-center text-xs text-slate-600">Đang tải ciphertext và giải mã...</p>}
+          {loading && <p className="text-center text-xs text-slate-600">{DECRYPT_MESSAGES ? 'Đang tải ciphertext và giải mã...' : 'Đang tải ciphertext...'}</p>}
           {!loading && messages.length === 0 && <div className="py-16 text-center"><p className="font-display text-2xl text-slate-300">Bắt đầu bằng một tin nhắn.</p><p className="mt-2 text-xs text-slate-600">Nội dung được mã hóa trước khi rời trình duyệt.</p></div>}
           {messages.map((message) => {
             const mine = userId(message.senderId) === currentUserId
@@ -553,10 +557,13 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
                     </p>
                   )}
                   {message.msgType === 'FILE' ? (
-                    <button className="flex w-full items-center gap-3 text-left" onClick={() => openFile(message)}>
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ink text-[10px] font-bold text-mint">{fileIcon(message)}</span>
-                      <span className="min-w-0"><strong className="block truncate text-sm">{message.fileName || 'Tệp mã hóa'}</strong><small className="text-slate-500">{fileSize(message.fileSizeBytes)} · {canPreviewFile(message) ? 'giải mã và mở xem' : 'giải mã khi tải'}</small></span>
-                    </button>
+                    <>
+                      <button className="flex w-full items-center gap-3 text-left" onClick={() => openFile(message)}>
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ink text-[10px] font-bold text-mint">{fileIcon(message)}</span>
+                        <span className="min-w-0"><strong className="block truncate text-sm">{message.fileName || 'Tệp mã hóa'}</strong><small className="text-slate-500">{fileSize(message.fileSizeBytes)} · {DECRYPT_MESSAGES ? (canPreviewFile(message) ? 'giải mã và mở xem' : 'giải mã khi tải') : 'đang hiển thị envelope mã hóa'}</small></span>
+                      </button>
+                      {!DECRYPT_MESSAGES && <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-line bg-ink/70 p-3 font-mono text-[10px] leading-4 text-amber">{encryptedPreview(message.encryptedContent)}</pre>}
+                    </>
                   ) : <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${message.decrypted ? 'text-paper' : 'italic text-slate-500'}`}>{message.text}</p>}
                   <div className="mt-2 flex items-center justify-end gap-2 text-[9px] uppercase tracking-wider text-slate-600">
                     {message.verified === true && <span className="text-mint">signature ok</span>}

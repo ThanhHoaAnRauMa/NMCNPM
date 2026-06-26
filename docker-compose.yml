@@ -60,6 +60,7 @@ services:
       context: ./frontend
       args:
         VITE_API_URL: ${VITE_API_URL:-}
+        VITE_DECRYPT_MESSAGES: ${VITE_DECRYPT_MESSAGES:-true}
         VITE_CONTRACT_ADDRESS: ${VITE_CONTRACT_ADDRESS:-}
     restart: unless-stopped
     depends_on:
