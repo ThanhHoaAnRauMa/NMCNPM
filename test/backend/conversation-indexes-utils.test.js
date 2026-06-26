@@ -88,6 +88,14 @@ test('conversation model generates a bytes32 room id before insert', async () =>
   assert.ok(conversation.roomId.endsWith(String(conversation._id)))
 })
 
+test('conversation indexes avoid MongoDB parallel array compounds', () => {
+  const invalidParallelArrayIndexes = Conversation.schema.indexes().filter(([keys]) =>
+    Object.hasOwn(keys, 'members') && (Object.hasOwn(keys, 'archivedFor') || Object.hasOwn(keys, 'deletedFor'))
+  )
+
+  assert.deepEqual(invalidParallelArrayIndexes, [])
+})
+
 test('direct conversation creation falls back to an existing room when legacy unique index remains', async () => {
   const duplicateKeyError = new Error('duplicate key')
   duplicateKeyError.code = 11000

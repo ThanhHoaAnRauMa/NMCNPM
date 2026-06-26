@@ -64,11 +64,11 @@ Indexes:
 | Index | Purpose |
 | --- | --- |
 | `{ members: 1, updatedAt: -1 }` | Membership and recent ordering |
-| `{ members: 1, archivedFor: 1, updatedAt: -1 }` | Filtering archived conversations per user |
-| `{ members: 1, deletedFor: 1, updatedAt: -1 }` | Filtering user-hidden conversations |
 | `{ type: 1, members: 1 }` | Direct/group membership lookup |
 | `{ type: 1, mode: 1, members: 1 }` | Mode-specific direct conversation lookup |
 | `{ roomId: 1 }` unique sparse | Evidence package room lookup/display |
+
+`archivedFor` and `deletedFor` are intentionally not part of compound indexes with `members` because MongoDB rejects compound indexes over parallel array fields.
 
 ## Message
 

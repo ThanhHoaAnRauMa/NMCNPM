@@ -81,8 +81,6 @@ ConversationSchema.pre("validate", function ensureRoomId() {
 });
 
 ConversationSchema.index({ members: 1, updatedAt: -1 });
-ConversationSchema.index({ members: 1, archivedFor: 1, updatedAt: -1 });
-ConversationSchema.index({ members: 1, deletedFor: 1, updatedAt: -1 });
 ConversationSchema.index({ type: 1, members: 1 });
 ConversationSchema.index({ type: 1, mode: 1, members: 1 });
 ConversationSchema.index({ roomId: 1 }, { unique: true, sparse: true });
