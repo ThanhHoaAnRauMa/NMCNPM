@@ -2,6 +2,7 @@ const mongoose = require("../utils/mongoose");
 const Conversation = require("../models/Conversation.model");
 const User = require("../models/User.model");
 const { conversationRoomId } = require("../models/Conversation.model");
+const { createConversationWithLegacyIndexRetry } = require("../utils/conversationIndexes.utils");
 
 function validId(value) {
   return mongoose.Types.ObjectId.isValid(value);
@@ -26,7 +27,7 @@ exports.createGroup = async (req, res) => {
     if (mode === "KYC" && (await User.countDocuments({ _id: { $in: members }, kycStatus: { $in: ["VERIFIED", "verified"] } })) !== members.length) {
       return res.status(403).json({ success: false, code: "KYC_REQUIRED", message: "Every group member must be KYC verified for KYC mode." });
     }
-    const group = await Conversation.create({ type: "GROUP", mode, members, groupName: name, createdBy: req.userId, admins: [req.userId] });
+    const group = await createConversationWithLegacyIndexRetry(Conversation, { type: "GROUP", mode, members, groupName: name, createdBy: req.userId, admins: [req.userId] });
     const io = req.app.get("io");
     for (const memberId of members) {
       if (memberId !== req.userId) {

@@ -2,6 +2,7 @@ const mongoose = require("../utils/mongoose");
 const Conversation = require("../models/Conversation.model");
 const User = require("../models/User.model");
 const { conversationRoomId } = require("../models/Conversation.model");
+const { createConversationWithLegacyIndexRetry } = require("../utils/conversationIndexes.utils");
 
 function validId(value) {
   return mongoose.Types.ObjectId.isValid(value);
@@ -148,7 +149,7 @@ exports.startDirectConversation = async (req, res) => {
     }).sort({ createdAt: 1 });
     let isNew = false;
     if (!conversation) {
-      conversation = await Conversation.create({ type: "DIRECT", mode, members: [req.userId, otherId] });
+      conversation = await createConversationWithLegacyIndexRetry(Conversation, { type: "DIRECT", mode, members: [req.userId, otherId] });
       isNew = true;
       req.app.get("io")?.to(`user:${otherId}`).emit("conversation_created", {
         conversationId: conversation._id,
