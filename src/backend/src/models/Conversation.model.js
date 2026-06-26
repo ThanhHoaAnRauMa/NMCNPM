@@ -74,6 +74,12 @@ const ConversationSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+ConversationSchema.pre("validate", function ensureRoomId() {
+  if (!this.roomId) {
+    this.roomId = conversationRoomId(this._id);
+  }
+});
+
 ConversationSchema.index({ members: 1, updatedAt: -1 });
 ConversationSchema.index({ members: 1, archivedFor: 1, updatedAt: -1 });
 ConversationSchema.index({ members: 1, deletedFor: 1, updatedAt: -1 });

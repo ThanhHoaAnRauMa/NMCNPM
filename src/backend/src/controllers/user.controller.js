@@ -132,7 +132,8 @@ exports.startDirectConversation = async (req, res) => {
     }
     const otherUser = await User.findById(otherId).select("username displayName avatarUrl kycStatus publicKey blocklist");
     if (!otherUser) return res.status(404).json({ success: false, message: "User not found." });
-    if (otherUser.blocklist.some((id) => id.toString() === req.userId)) {
+    const otherBlocklist = Array.isArray(otherUser.blocklist) ? otherUser.blocklist : [];
+    if (otherBlocklist.some((id) => id.toString() === req.userId)) {
       return res.status(403).json({ success: false, message: "This user cannot be contacted." });
     }
     if (mode === "KYC") {

@@ -8,6 +8,7 @@ const {
   createConversationWithLegacyIndexRetry,
   isLegacyConversationMemberUniqueIndex,
 } = require('../../src/backend/src/utils/conversationIndexes.utils.js')
+const Conversation = require('../../src/backend/src/models/Conversation.model.js')
 
 test('legacy conversation member unique index detection ignores mode-aware indexes', () => {
   assert.equal(
@@ -70,4 +71,18 @@ test('conversation creation retries after dropping legacy unique member index', 
   assert.equal(Conversation.createCalls, 2)
   assert.deepEqual(droppedIndexes, ['legacy_member_unique'])
   assert.deepEqual(conversation, { _id: 'conversation-id', ...payload })
+})
+
+test('conversation model generates a bytes32 room id before insert', async () => {
+  const conversation = new Conversation({
+    type: 'DIRECT',
+    mode: 'PRIVACY',
+    members: ['507f191e810c19729de860ea', '507f191e810c19729de860eb'],
+    roomId: null,
+  })
+
+  await conversation.validate()
+
+  assert.match(conversation.roomId, /^0x[a-f0-9]{64}$/i)
+  assert.ok(conversation.roomId.endsWith(String(conversation._id)))
 })
