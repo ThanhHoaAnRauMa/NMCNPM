@@ -115,6 +115,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
   const pendingPlaintext = useRef(new Map())
   const typingTimer = useRef(null)
   const fileInput = useRef(null)
+  const messagesEndRef = useRef(null)
   const searchRun = useRef(0)
   const currentUserId = currentUser.id || currentUser._id
   const isPrivacy = ['PRIVACY', 'Privacy'].includes(conversation?.mode)
@@ -161,11 +162,18 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
     })
   }
 
+  const scrollToLatestMessage = (behavior = 'auto') => {
+    window.requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' })
+    })
+  }
+
   useEffect(() => {
     let active = true
     const activeCacheKey = currentUserId && conversation?._id ? `${currentUserId}:${conversation._id}` : null
     const cachedMessages = readMessageCache(activeCacheKey)
     setMessages(cachedMessages)
+    scrollToLatestMessage()
     setError('')
     setSummary(null)
     setSummaryLoading(false)
@@ -185,6 +193,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
           const merged = normalizeMessages([...cachedMessages, ...hydrated])
           writeMessageCache(activeCacheKey, merged)
           setMessages(merged)
+          scrollToLatestMessage()
         }
       })
       .catch((requestError) => active && setError(requestError.message))
@@ -195,6 +204,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
       const hydrated = await hydrateMessage(message)
       if (!active) return
       updateMessages((current) => uniqueMessages([...current.filter((item) => item.tempId !== message.tempId || item._id), hydrated]))
+      scrollToLatestMessage('smooth')
       onConversationActivity?.(message.conversationId, hydrated)
       const plaintext = pendingPlaintext.current.get(message.tempId)
       if (plaintext) pendingPlaintext.current.delete(message.tempId)
@@ -537,6 +547,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
               </article>
             )
           })}
+          <div ref={messagesEndRef} />
         </div>
 
         <div className="min-h-5 px-7 text-[10px] text-mint">{otherTyping ? `${otherTyping} đang nhập...` : ''}</div>
