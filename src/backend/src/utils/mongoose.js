@@ -5,4 +5,11 @@ const { createRequire } = require("module");
 // root Mongoose singleton and its connection even when src/backend has modules installed.
 const requireFromRoot = createRequire(path.resolve(__dirname, "../../../../package.json"));
 
-module.exports = requireFromRoot("mongoose");
+const mongoose = requireFromRoot("mongoose");
+const production = process.env.NODE_ENV === "production";
+const autoIndex = process.env.MONGO_AUTO_INDEX === "true" || (!production && process.env.MONGO_AUTO_INDEX !== "false");
+
+mongoose.set("autoIndex", autoIndex);
+mongoose.set("autoCreate", autoIndex);
+
+module.exports = mongoose;

@@ -12,6 +12,17 @@ function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function mongoErrorPayload(error) {
+  return {
+    success: false,
+    code: error.name || "SERVER_ERROR",
+    message: "Internal server error.",
+    mongoCode: error.code || null,
+    mongoCodeName: error.codeName || null,
+    mongoMessage: error.message || null,
+  };
+}
+
 exports.uploadPublicKey = async (req, res) => {
   try {
     const publicKey = typeof req.body.publicKey === "string" ? req.body.publicKey.trim() : "";
@@ -199,6 +210,6 @@ exports.startDirectConversation = async (req, res) => {
         message: "Conversation database index conflict. Try again after the database index migration completes.",
       });
     }
-    return res.status(500).json({ success: false, code: error.name || "SERVER_ERROR", message: "Internal server error." });
+    return res.status(500).json(mongoErrorPayload(error));
   }
 };

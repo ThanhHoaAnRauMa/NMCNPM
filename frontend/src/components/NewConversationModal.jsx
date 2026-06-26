@@ -3,6 +3,17 @@ import KycBadge from './KycBadge.jsx'
 import Modal from './Modal.jsx'
 import { displayName, userId } from '../lib/format.js'
 
+function requestMessage(error) {
+  const payload = error.payload || {}
+  const details = [
+    payload.code,
+    payload.mongoCode ? `mongoCode=${payload.mongoCode}` : null,
+    payload.mongoCodeName ? `mongoCodeName=${payload.mongoCodeName}` : null,
+    payload.mongoMessage,
+  ].filter(Boolean)
+  return details.length ? `${error.message} (${details.join(' | ')})` : error.message
+}
+
 export default function NewConversationModal({ api, notify, onClose, onCreated }) {
   const [kind, setKind] = useState('direct')
   const [mode, setMode] = useState('KYC')
@@ -20,8 +31,9 @@ export default function NewConversationModal({ api, notify, onClose, onCreated }
       const payload = await api.get(`/users/search?q=${encodeURIComponent(query)}`)
       setUsers(payload.users)
     } catch (requestError) {
-      setError(requestError.message)
-      notify?.(requestError.message, { type: 'error', title: 'Tìm người dùng' })
+      const message = requestMessage(requestError)
+      setError(message)
+      notify?.(message, { type: 'error', title: 'Tìm người dùng' })
     }
   }
 
@@ -60,7 +72,7 @@ export default function NewConversationModal({ api, notify, onClose, onCreated }
       notify?.(warningCode ? 'Đã mở cuộc trò chuyện có sẵn do database còn index cũ.' : 'Đã mở cuộc trò chuyện.', { type: warningCode ? 'warning' : 'success' })
       onClose()
     } catch (requestError) {
-      const message = requestError.payload?.code ? `${requestError.message} (${requestError.payload.code})` : requestError.message
+      const message = requestMessage(requestError)
       setError(message)
       notify?.(message, { type: 'error', title: 'Tạo cuộc trò chuyện' })
     } finally {

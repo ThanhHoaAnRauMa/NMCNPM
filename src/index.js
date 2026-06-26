@@ -9,6 +9,7 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import { Server as SocketIO } from 'socket.io'
 
+import './db/mongooseRuntime.js'
 import aiRouter from './routes/ai.js'
 import { registerHealthRoutes } from './health.js'
 import messagesRouter from './routes/messages.js'
