@@ -24,9 +24,11 @@ const kycRoutes = require('../../src/backend/src/routes/kyc.routes.js')
 const userRoutes = require('../../src/backend/src/routes/user.routes.js')
 const Conversation = require('../../src/backend/src/models/Conversation.model.js')
 const Message = require('../../src/backend/src/models/Message.model.js')
+const PasswordChangeOtp = require('../../src/backend/src/models/PasswordChangeOtp.model.js')
 const User = require('../../src/backend/src/models/User.model.js')
 const KYCRecord = require('../../src/backend/src/models/KYCRecord.model.js')
 const cloudinaryUtils = require('../../src/backend/src/utils/cloudinary.utils.js')
+const { restoreConversationForMessageRecipients } = require('../../src/backend/src/utils/conversationVisibility.utils.js')
 const signatureUtils = require('../../src/backend/src/utils/signature.utils.js')
 const bcrypt = require('bcryptjs')
 const TEST_PUBLIC_KEY = JSON.stringify({ v: 1, encryption: { kty: 'RSA' }, signing: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' } })
@@ -158,6 +160,53 @@ describe('integrated feature API', () => {
     const verified = await request(app).post('/auth/register/verify').send({ email: 'otp.alice@example.com', otp: requested.body.devOtp })
     assert.equal(verified.status, 201)
     assert.equal(verified.body.user.email, 'otp.alice@example.com')
+  })
+
+  test('changes password only after a valid email OTP', async () => {
+    const alice = await register('alicePassword', 'alice.password@example.com')
+
+    const requested = await request(app)
+      .post('/auth/password/otp')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({})
+    assert.equal(requested.status, 200)
+    assert.equal(requested.body.code, 'PASSWORD_CHANGE_OTP_SENT')
+    assert.match(requested.body.devOtp, /^\d{6}$/)
+    assert.ok(new Date(requested.body.expiresAt).getTime() <= Date.now() + 5 * 60 * 1000 + 1000)
+
+    const rejected = await request(app)
+      .post('/auth/password/change')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ otp: '000000', newPassword: 'new-correct-horse-42', confirmPassword: 'new-correct-horse-42' })
+    assert.equal(rejected.status, 401)
+    assert.equal(rejected.body.code, 'INVALID_OTP')
+
+    const changed = await request(app)
+      .post('/auth/password/change')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ otp: requested.body.devOtp, newPassword: 'new-correct-horse-42', confirmPassword: 'new-correct-horse-42' })
+    assert.equal(changed.status, 200)
+    assert.equal(changed.body.code, 'PASSWORD_CHANGED')
+    assert.equal(await PasswordChangeOtp.countDocuments({ userId: alice.user.id }), 0)
+
+    const oldLogin = await request(app).post('/auth/login').send({ identifier: 'alicePassword', password: 'correct-horse-42' })
+    assert.equal(oldLogin.status, 401)
+
+    const newLogin = await request(app).post('/auth/login').send({ identifier: 'alicePassword', password: 'new-correct-horse-42' })
+    assert.equal(newLogin.status, 200)
+
+    const expiring = await request(app)
+      .post('/auth/password/otp')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({})
+    assert.equal(expiring.status, 200)
+    await PasswordChangeOtp.updateOne({ userId: alice.user.id }, { expiresAt: new Date(Date.now() - 1000) })
+    const expired = await request(app)
+      .post('/auth/password/change')
+      .set('Authorization', `Bearer ${alice.accessToken}`)
+      .send({ otp: expiring.body.devOtp, newPassword: 'expired-correct-horse-42', confirmPassword: 'expired-correct-horse-42' })
+    assert.equal(expired.status, 410)
+    assert.equal(expired.body.code, 'OTP_EXPIRED')
   })
 
   test('logs in with username, normalized email, and the legacy email field', async () => {
@@ -306,6 +355,18 @@ describe('integrated feature API', () => {
     const deletedForBob = await request(app).get('/chat/conversations?includeArchived=true').set('Authorization', `Bearer ${bob.accessToken}`)
     assert.equal(deletedForBob.body.conversations.length, 0)
     assert.ok(await Conversation.exists({ _id: created.body.conversationId }))
+
+    const newMessage = await Message.create({
+      conversationId: created.body.conversationId,
+      senderId: alice.user.id,
+      encryptedContent: 'new-ciphertext',
+      signature: 'signature',
+    })
+    const restoredConversation = await Conversation.findById(created.body.conversationId)
+    await restoreConversationForMessageRecipients(restoredConversation, alice.user.id, newMessage._id)
+    const restoredForBob = await request(app).get('/chat/conversations').set('Authorization', `Bearer ${bob.accessToken}`)
+    assert.equal(restoredForBob.body.conversations.length, 1)
+    assert.equal(String(restoredForBob.body.conversations[0]._id), String(created.body.conversationId))
 
     const group = await request(app)
       .post('/groups')

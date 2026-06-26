@@ -12,6 +12,8 @@ router.post("/register/verify", authLimiter, authCtrl.verifyRegistrationOtp);
 
 router.post("/login", authLimiter, authCtrl.login);
 router.post("/logout", verifyToken, authCtrl.logout);
+router.post("/password/otp", verifyToken, authLimiter, authCtrl.requestPasswordChangeOtp);
+router.post("/password/change", verifyToken, authLimiter, authCtrl.changePassword);
 
 router.post("/refresh", refreshLimiter, authCtrl.refresh);
 

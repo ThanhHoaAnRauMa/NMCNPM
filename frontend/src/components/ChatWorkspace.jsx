@@ -128,7 +128,13 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
   const peer = useMemo(() => conversationPeer(conversation, currentUserId), [conversation, currentUserId])
   const peerId = userId(peer)
   const isDirect = conversation && !['GROUP', 'group'].includes(conversation.type)
+  const isGroup = conversation && ['GROUP', 'group'].includes(conversation.type)
   const peerBlocked = Boolean(isDirect && peerId && blockedUserIds?.has(String(peerId)))
+  const messageSenderName = (sender) => (
+    isGroup && blockedUserIds?.has(String(userId(sender)))
+      ? 'Ng\u01b0\u1eddi d\u00f9ng b\u1ecb ch\u1eb7n'
+      : displayName(sender)
+  )
 
   const hydrateMessage = async (message) => {
     const sender = typeof message.senderId === 'object' ? message.senderId : memberById.get(userId(message.senderId))
@@ -527,7 +533,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
                 <div className={`max-w-[82%] rounded-2xl border px-4 py-3 sm:max-w-[68%] ${mine ? 'border-mint/20 bg-mint/10' : 'border-line bg-white/[.035]'}`}>
                   {!mine && (
                     <p className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber">
-                      <span>{displayName(message.senderId)}</span>
+                      <span>{messageSenderName(message.senderId)}</span>
                       <KycBadge className="h-3.5 w-3.5" user={message.senderId} />
                     </p>
                   )}
@@ -587,7 +593,7 @@ export default function ChatWorkspace({ api, socket, blockedUserIds, conversatio
                 <button className="w-full rounded-xl border border-line bg-ink/50 p-3 text-left transition hover:border-mint/40 hover:bg-white/[.04]" key={String(result._id || result.tempId)} onClick={() => jumpToSearchResult(result._id || result.tempId)} type="button">
                   <span className="flex items-center justify-between gap-3">
                     <strong className="min-w-0 flex items-center gap-1.5 text-xs text-amber">
-                      <span className="truncate">{displayName(result.senderId)}</span>
+                      <span className="truncate">{messageSenderName(result.senderId)}</span>
                       <KycBadge className="h-3.5 w-3.5" user={result.senderId} />
                     </strong>
                     <small className="shrink-0 text-[10px] text-slate-600">{new Date(result.createdAt || result.timestamp).toLocaleString('vi-VN')}</small>

@@ -4,6 +4,7 @@ const Message = require("../models/Message.model");
 const PrivacyDelivery = require("../models/PrivacyDelivery.model");
 const User = require("../models/User.model");
 const { validateKycConversationMembers } = require("../utils/conversationSecurity.utils");
+const { restoreConversationForMessageRecipients } = require("../utils/conversationVisibility.utils");
 const { MAX_ENCRYPTED_MESSAGE_CHARS, MAX_SIGNATURE_CHARS, validateEncryptedEnvelope } = require("../utils/encryptedEnvelope.utils");
 const { verifyEnvelopeSignature } = require("../utils/signature.utils");
 
@@ -224,7 +225,7 @@ module.exports = function registerChatSocket(io) {
           replyTo: replyTo || null,
           status: "SENT",
         });
-        await Conversation.findByIdAndUpdate(conversationId, { lastMessage: message._id });
+        await restoreConversationForMessageRecipients(conversation, socket.userId, message._id);
 
         const messageData = {
           _id: message._id,
@@ -309,7 +310,7 @@ module.exports = function registerChatSocket(io) {
           msgType: "TEXT",
           status: "SENT",
         });
-        await Conversation.findByIdAndUpdate(conversationId, { lastMessage: message._id });
+        await restoreConversationForMessageRecipients(conversation, socket.userId, message._id);
         const messageData = {
           _id: message._id,
           tempId,

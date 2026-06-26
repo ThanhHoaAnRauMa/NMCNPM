@@ -39,6 +39,11 @@ export default function ProfilePanel({
   const [kycDialog, setKycDialog] = useState(null)
   const [kycFieldErrors, setKycFieldErrors] = useState({})
   const [backupPassword, setBackupPassword] = useState('')
+  const [passwordForm, setPasswordForm] = useState({ otp: '', newPassword: '', confirmPassword: '' })
+  const [passwordOtpSent, setPasswordOtpSent] = useState(false)
+  const [passwordOtpExpiresAt, setPasswordOtpExpiresAt] = useState('')
+  const [passwordDevOtp, setPasswordDevOtp] = useState('')
+  const [passwordLoading, setPasswordLoading] = useState(false)
   const backupInput = useRef(null)
   const keyReady = Boolean(identity) && keyStatus === 'ready'
   const kycStatus = String(profile?.kycStatus || 'NONE').toUpperCase()
@@ -176,6 +181,53 @@ export default function ProfilePanel({
     } catch (requestError) {
       setError(requestError.message)
       notify?.(requestError.message, { type: 'error', title: 'Hồ sơ' })
+    }
+  }
+
+  const requestPasswordOtp = async () => {
+    setError('')
+    setNotice('')
+    setPasswordLoading(true)
+    try {
+      const payload = await api.post('/auth/password/otp', {})
+      setPasswordOtpSent(true)
+      setPasswordOtpExpiresAt(payload.expiresAt || '')
+      setPasswordDevOtp(payload.devOtp || '')
+      setPasswordForm({ otp: '', newPassword: '', confirmPassword: '' })
+      const message = 'Đã gửi mã OTP đổi mật khẩu đến email của bạn.'
+      setNotice(message)
+      notify?.(message, { type: 'success', title: 'Password' })
+    } catch (requestError) {
+      setError(requestError.message)
+      notify?.(requestError.message, { type: 'error', title: 'Password' })
+    } finally {
+      setPasswordLoading(false)
+    }
+  }
+
+  const changePassword = async (event) => {
+    event.preventDefault()
+    setError('')
+    setNotice('')
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setError('Mật khẩu xác nhận không khớp.')
+      return
+    }
+    setPasswordLoading(true)
+    try {
+      await api.post('/auth/password/change', passwordForm)
+      setPasswordForm({ otp: '', newPassword: '', confirmPassword: '' })
+      setPasswordOtpSent(false)
+      setPasswordOtpExpiresAt('')
+      setPasswordDevOtp('')
+      const message = 'Đã đổi mật khẩu thành công.'
+      setNotice(message)
+      notify?.(message, { type: 'success', title: 'Password' })
+    } catch (requestError) {
+      setError(requestError.message)
+      notify?.(requestError.message, { type: 'error', title: 'Password' })
+    } finally {
+      setPasswordLoading(false)
     }
   }
 
@@ -325,6 +377,35 @@ export default function ProfilePanel({
             {identity && ['mismatch', 'local-only'].includes(keyStatus) && <button className="btn-secondary mt-5 w-full" onClick={synchronizeLocalKey}>Dùng khóa thiết bị này cho tài khoản</button>}
             <div className="mt-5 border-t border-line pt-5 text-xs leading-5 text-slate-500">Private key được lưu trong IndexedDB của trình duyệt và không xuất hiện trong request API.</div>
           </section>
+
+          <form className="panel rounded-2xl p-6 lg:col-span-2" onSubmit={changePassword}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="eyebrow">Account security</p>
+                <h3 className="mt-2 text-xl font-bold">Đổi mật khẩu</h3>
+                <p className="mt-3 text-xs leading-5 text-slate-400">Mã OTP được gửi đến email tài khoản và hết hạn sau 5 phút.</p>
+              </div>
+              <button className="btn-secondary" disabled={passwordLoading} onClick={requestPasswordOtp} type="button">
+                {passwordLoading && !passwordOtpSent ? 'Đang gửi...' : passwordOtpSent ? 'Gửi lại OTP' : 'Gửi OTP'}
+              </button>
+            </div>
+            {passwordOtpSent && (
+              <>
+                <div className="mt-4 rounded-xl border border-amber/30 bg-amber/10 px-4 py-3 text-xs leading-5 text-amber">
+                  OTP đã được gửi{passwordOtpExpiresAt ? `, hết hạn lúc ${new Date(passwordOtpExpiresAt).toLocaleTimeString('vi-VN')}` : ''}.
+                  {passwordDevOtp && <span className="mt-1 block">Mã test local: {passwordDevOtp}</span>}
+                </div>
+                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                  <label className="text-xs font-semibold text-slate-300">OTP<input autoComplete="one-time-code" className="field mt-2 tracking-[0.35em]" inputMode="numeric" maxLength={6} minLength={6} pattern="[0-9]{6}" required value={passwordForm.otp} onChange={(event) => setPasswordForm({ ...passwordForm, otp: event.target.value.replace(/\D/g, '').slice(0, 6) })} /></label>
+                  <label className="text-xs font-semibold text-slate-300">Mật khẩu mới<input autoComplete="new-password" className="field mt-2" maxLength={72} minLength={8} required type="password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm({ ...passwordForm, newPassword: event.target.value })} /></label>
+                  <label className="text-xs font-semibold text-slate-300">Xác nhận mật khẩu<input autoComplete="new-password" className="field mt-2" maxLength={72} minLength={8} required type="password" value={passwordForm.confirmPassword} onChange={(event) => setPasswordForm({ ...passwordForm, confirmPassword: event.target.value })} /></label>
+                </div>
+                <button className="btn-primary mt-4" disabled={passwordLoading || passwordForm.otp.length !== 6 || passwordForm.newPassword.length < 8} type="submit">
+                  {passwordLoading ? 'Đang xử lý...' : 'Xác nhận đổi mật khẩu'}
+                </button>
+              </>
+            )}
+          </form>
 
           <section className="panel rounded-2xl p-6 lg:col-span-2">
             <p className="eyebrow">Encrypted recovery</p>

@@ -4,6 +4,7 @@ const Message = require("../models/Message.model");
 const User = require("../models/User.model");
 const { notifyConversationMembers } = require("../socket/chat.socket");
 const { validateKycConversationMembers } = require("../utils/conversationSecurity.utils");
+const { restoreConversationForMessageRecipients } = require("../utils/conversationVisibility.utils");
 const fileStorage = require("../utils/fileStorage.utils");
 const { validateEncryptedEnvelope } = require("../utils/encryptedEnvelope.utils");
 const { verifyEnvelopeSignature } = require("../utils/signature.utils");
@@ -71,7 +72,7 @@ exports.uploadFile = async (req, res) => {
       fileSizeBytes: req.file.size,
       filePublicId: uploaded.publicId,
     });
-    await Conversation.findByIdAndUpdate(conversationId, { lastMessage: message._id });
+    await restoreConversationForMessageRecipients(conversation, req.userId, message._id);
     const io = req.app.get("io");
     io?.to(conversationId).emit("new_message", {
       _id: message._id,

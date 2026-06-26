@@ -1,8 +1,9 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const PasswordChangeOtp = require("../models/PasswordChangeOtp.model");
 const RegistrationOtp = require("../models/RegistrationOtp.model");
 const User = require("../models/User.model");
-const { hasSmtpConfig, sendRegistrationOtpEmail } = require("../utils/email.utils");
+const { isProduction, sendPasswordChangeOtpEmail, sendRegistrationOtpEmail } = require("../utils/email.utils");
 const { generateTokens, verifyRefreshToken } = require("../utils/jwt.utils");
 
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -10,6 +11,8 @@ const LOCK_DURATION_MS = 15 * 60 * 1000;
 const PASSWORD_MIN_LENGTH = 8;
 const REGISTRATION_OTP_EXPIRES_MINUTES = Number(process.env.REGISTRATION_OTP_EXPIRES_MINUTES || 10);
 const REGISTRATION_OTP_MAX_ATTEMPTS = Number(process.env.REGISTRATION_OTP_MAX_ATTEMPTS || 5);
+const PASSWORD_CHANGE_OTP_EXPIRES_MINUTES = Number(process.env.PASSWORD_CHANGE_OTP_EXPIRES_MINUTES || 5);
+const PASSWORD_CHANGE_OTP_MAX_ATTEMPTS = Number(process.env.PASSWORD_CHANGE_OTP_MAX_ATTEMPTS || 5);
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function exactCaseInsensitive(value) {
@@ -136,12 +139,20 @@ exports.register = async (req, res) => {
     });
 
     const emailResult = await sendRegistrationOtpEmail({ email, username, otp, expiresInMinutes: REGISTRATION_OTP_EXPIRES_MINUTES });
+    if (!emailResult.skipped) {
+      console.info("[register] OTP email result", {
+        to: email,
+        messageId: emailResult.messageId,
+        accepted: emailResult.accepted,
+        rejected: emailResult.rejected,
+      });
+    }
     return res.status(200).json({
       success: true,
       message: "Registration OTP sent. Please check your email.",
       code: "REGISTRATION_OTP_SENT",
       expiresAt,
-      devOtp: emailResult.skipped && !hasSmtpConfig() ? otp : undefined,
+      devOtp: !isProduction() ? otp : undefined,
     });
   } catch (error) {
     await RegistrationOtp.deleteOne({ email }).catch(() => {});
@@ -281,6 +292,106 @@ exports.logout = async (req, res) => {
     return res.json({ success: true, message: "Logout successful." });
   } catch (error) {
     console.error("[logout]", error);
+    return res.status(500).json({ success: false, message: "Internal server error.", code: "SERVER_ERROR" });
+  }
+};
+
+exports.requestPasswordChangeOtp = async (req, res) => {
+  try {
+    const user = await User.findById(req.userId).select("username displayName email").lean();
+    if (!user) return res.status(404).json({ success: false, message: "Account not found.", code: "USER_NOT_FOUND" });
+
+    const otp = generateOtp();
+    const expiresAt = new Date(Date.now() + PASSWORD_CHANGE_OTP_EXPIRES_MINUTES * 60 * 1000);
+    await PasswordChangeOtp.findOneAndUpdate(
+      { userId: req.userId },
+      {
+        userId: req.userId,
+        otpHash: await bcrypt.hash(otp, 12),
+        expiresAt,
+        attempts: 0,
+      },
+      { upsert: true, runValidators: true, setDefaultsOnInsert: true },
+    );
+
+    const emailResult = await sendPasswordChangeOtpEmail({
+      email: user.email,
+      username: user.displayName || user.username,
+      otp,
+      expiresInMinutes: PASSWORD_CHANGE_OTP_EXPIRES_MINUTES,
+    });
+    if (!emailResult.skipped) {
+      console.info("[requestPasswordChangeOtp] OTP email result", {
+        to: user.email,
+        messageId: emailResult.messageId,
+        accepted: emailResult.accepted,
+        rejected: emailResult.rejected,
+      });
+    }
+    return res.json({
+      success: true,
+      message: "Password change OTP sent. Please check your email.",
+      code: "PASSWORD_CHANGE_OTP_SENT",
+      expiresAt,
+      devOtp: !isProduction() ? otp : undefined,
+    });
+  } catch (error) {
+    if (error.code === "EMAIL_NOT_CONFIGURED") {
+      return res.status(500).json({ success: false, message: "Email sender is not configured.", code: "EMAIL_NOT_CONFIGURED" });
+    }
+    console.error("[requestPasswordChangeOtp]", error);
+    return res.status(500).json({ success: false, message: "Internal server error.", code: "SERVER_ERROR" });
+  }
+};
+
+exports.changePassword = async (req, res) => {
+  try {
+    const otp = typeof req.body.otp === "string" ? req.body.otp.trim() : "";
+    const newPassword = typeof req.body.newPassword === "string" ? req.body.newPassword : "";
+    const confirmPassword = typeof req.body.confirmPassword === "string" ? req.body.confirmPassword : "";
+
+    if (!otp || !newPassword || !confirmPassword) {
+      return res.status(400).json({ success: false, message: "OTP, new password and password confirmation are required.", code: "MISSING_FIELDS" });
+    }
+    if (!/^\d{6}$/.test(otp)) {
+      return res.status(400).json({ success: false, message: "OTP must contain 6 digits.", code: "INVALID_OTP_FORMAT" });
+    }
+    if (newPassword.length < PASSWORD_MIN_LENGTH || newPassword.length > 72) {
+      return res.status(400).json({ success: false, message: "Password must contain 8 to 72 characters.", code: "INVALID_PASSWORD_LENGTH" });
+    }
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: "Password confirmation does not match.", code: "PASSWORD_MISMATCH" });
+    }
+
+    const pending = await PasswordChangeOtp.findOne({ userId: req.userId }).select("+otpHash");
+    if (!pending) {
+      return res.status(404).json({ success: false, message: "Password change OTP was not found or has expired.", code: "OTP_NOT_FOUND" });
+    }
+    if (pending.expiresAt <= new Date()) {
+      await PasswordChangeOtp.deleteOne({ _id: pending._id });
+      return res.status(410).json({ success: false, message: "Password change OTP has expired.", code: "OTP_EXPIRED" });
+    }
+    if (pending.attempts >= PASSWORD_CHANGE_OTP_MAX_ATTEMPTS) {
+      await PasswordChangeOtp.deleteOne({ _id: pending._id });
+      return res.status(429).json({ success: false, message: "Too many OTP attempts. Please request a new OTP.", code: "OTP_ATTEMPTS_EXCEEDED" });
+    }
+
+    const isValidOtp = await bcrypt.compare(otp, pending.otpHash);
+    if (!isValidOtp) {
+      pending.attempts += 1;
+      await pending.save();
+      return res.status(401).json({ success: false, message: "OTP is incorrect.", code: "INVALID_OTP" });
+    }
+
+    await User.findByIdAndUpdate(req.userId, {
+      password: await bcrypt.hash(newPassword, 12),
+      loginAttempts: 0,
+      lockUntil: null,
+    });
+    await PasswordChangeOtp.deleteOne({ _id: pending._id });
+    return res.json({ success: true, message: "Password changed successfully.", code: "PASSWORD_CHANGED" });
+  } catch (error) {
+    console.error("[changePassword]", error);
     return res.status(500).json({ success: false, message: "Internal server error.", code: "SERVER_ERROR" });
   }
 };
