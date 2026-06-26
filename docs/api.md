@@ -25,8 +25,11 @@ Auth endpoints, search, and AI use in-memory per-instance rate limits and return
 
 | Method | Path | Auth | Body / Notes |
 | --- | --- | --- | --- |
-| POST | `/auth/register` | No | `{ username, email, password, confirmPassword }`; both passwords are required, must match, and contain 8-72 chars |
+| POST | `/auth/email-otp` | No | `{ email }`; sends a 6-digit registration OTP when the email is not already used |
+| POST | `/auth/register` | No | `{ username, email, password, confirmPassword, emailOtp }`; both passwords are required, must match, and contain 8-72 chars; `emailOtp` is required unless `EMAIL_VERIFICATION_REQUIRED=false` |
 | POST | `/auth/login` | No | `{ identifier, password }`; case-insensitive username/email matching also accepts email-shaped usernames and `@username`; legacy `{ email, password }` remains accepted; locks for 15 minutes after 5 failed attempts |
+| POST | `/auth/forgot-password` | No | `{ identifier }`; sends a reset link when the account exists and always returns a generic success message |
+| POST | `/auth/reset-password` | No | `{ token, password, confirmPassword }`; single-use token, passwords must match |
 | POST | `/auth/refresh` | No | `{ refreshToken }`; returns a new access/refresh pair |
 | POST | `/auth/logout` | JWT | Marks account offline; server-side token revocation is not implemented |
 
@@ -41,7 +44,9 @@ Successful register/login response:
 }
 ```
 
-Registration compatibility note: clients must send `confirmPassword`. Older registration payloads without it receive `400` with `code: "MISSING_FIELDS"`; unequal values receive `code: "PASSWORD_MISMATCH"`. New usernames cannot differ only by letter case. Login remains compatible with legacy case-colliding accounts by selecting the account whose password matches.
+Registration compatibility note: clients must send `confirmPassword` and, when email verification is enabled, `emailOtp`. Older registration payloads without required fields receive `400` with `code: "MISSING_FIELDS"` or `EMAIL_OTP_REQUIRED`; unequal passwords receive `code: "PASSWORD_MISMATCH"`. New usernames cannot differ only by letter case. Login remains compatible with legacy case-colliding accounts by selecting the account whose password matches.
+
+Email delivery uses Resend (`RESEND_API_KEY`) in production. `EMAIL_DEBUG_OTP=true` is local/test-only and returns debug OTP/reset tokens in API responses.
 
 ## Users and Conversations
 

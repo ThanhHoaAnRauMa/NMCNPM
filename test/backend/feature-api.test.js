@@ -11,6 +11,9 @@ process.env.JWT_SECRET = 'test-access-secret-with-sufficient-entropy'
 process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-with-sufficient-entropy'
 process.env.JWT_EXPIRES_IN = '15m'
 process.env.JWT_REFRESH_EXPIRES_IN = '7d'
+process.env.EMAIL_VERIFICATION_REQUIRED = 'true'
+process.env.EMAIL_DEBUG_OTP = 'true'
+process.env.FRONTEND_URL = 'http://localhost:5173'
 
 const require = createRequire(import.meta.url)
 const authRoutes = require('../../src/backend/src/routes/auth.routes.js')
@@ -66,7 +69,10 @@ after(async () => {
 })
 
 async function register(username, email) {
-  const response = await request(app).post('/auth/register').send({ username, email, password: 'correct-horse-42', confirmPassword: 'correct-horse-42' })
+  const otp = await request(app).post('/auth/email-otp').send({ email })
+  assert.equal(otp.status, 200, `send otp ${email} failed: ${JSON.stringify(otp.body)}`)
+  assert.match(otp.body.debugOtp, /^\d{6}$/)
+  const response = await request(app).post('/auth/register').send({ username, email, password: 'correct-horse-42', confirmPassword: 'correct-horse-42', emailOtp: otp.body.debugOtp })
   assert.equal(response.status, 201, `register ${username}/${email} failed: ${JSON.stringify(response.body)}`)
   return response.body
 }
@@ -106,6 +112,62 @@ describe('integrated feature API', () => {
     })
     assert.equal(mismatch.status, 400)
     assert.equal(mismatch.body.code, 'PASSWORD_MISMATCH')
+
+    const missingOtp = await request(app).post('/auth/register').send({
+      username: 'missingOtp',
+      email: 'missing-otp@example.com',
+      password: 'correct-horse-42',
+      confirmPassword: 'correct-horse-42',
+    })
+    assert.equal(missingOtp.status, 400)
+    assert.equal(missingOtp.body.code, 'EMAIL_OTP_REQUIRED')
+  })
+
+  test('registers only after email OTP and supports password reset tokens', async () => {
+    const otp = await request(app).post('/auth/email-otp').send({ email: 'otp-user@example.com' })
+    assert.equal(otp.status, 200)
+    assert.match(otp.body.debugOtp, /^\d{6}$/)
+
+    const registered = await request(app).post('/auth/register').send({
+      username: 'otpUser',
+      email: 'otp-user@example.com',
+      password: 'correct-horse-42',
+      confirmPassword: 'correct-horse-42',
+      emailOtp: otp.body.debugOtp,
+    })
+    assert.equal(registered.status, 201)
+
+    const forgot = await request(app).post('/auth/forgot-password').send({ identifier: 'otp-user@example.com' })
+    assert.equal(forgot.status, 200)
+    assert.match(forgot.body.debugResetToken, /^[A-Za-z0-9_-]+$/)
+
+    const mismatch = await request(app).post('/auth/reset-password').send({
+      token: forgot.body.debugResetToken,
+      password: 'new-password-42',
+      confirmPassword: 'different-password-42',
+    })
+    assert.equal(mismatch.status, 400)
+    assert.equal(mismatch.body.code, 'PASSWORD_MISMATCH')
+
+    const reset = await request(app).post('/auth/reset-password').send({
+      token: forgot.body.debugResetToken,
+      password: 'new-password-42',
+      confirmPassword: 'new-password-42',
+    })
+    assert.equal(reset.status, 200)
+
+    const oldPassword = await request(app).post('/auth/login').send({ identifier: 'otpUser', password: 'correct-horse-42' })
+    assert.equal(oldPassword.status, 401)
+    const newPassword = await request(app).post('/auth/login').send({ identifier: 'otpUser', password: 'new-password-42' })
+    assert.equal(newPassword.status, 200)
+
+    const reused = await request(app).post('/auth/reset-password').send({
+      token: forgot.body.debugResetToken,
+      password: 'another-password-42',
+      confirmPassword: 'another-password-42',
+    })
+    assert.equal(reused.status, 400)
+    assert.equal(reused.body.code, 'RESET_TOKEN_INVALID')
   })
 
   test('logs in with username, normalized email, and the legacy email field', async () => {

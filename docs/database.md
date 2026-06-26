@@ -17,6 +17,8 @@ The database stores account metadata, encrypted message payloads, KYC hashes, Me
 | `AISummaryCache` | `src/db/models/aiSummaryCache.js` | Cached Gemini summaries without storing source plaintext |
 | `MerkleCommit` | `src/db/models/merkleCommit.js` | Merkle root and on-chain transaction metadata |
 | `KYCRecord` | `src/backend/src/models/KYCRecord.model.js` | Runtime KYC proof submission |
+| `EmailVerificationOtp` | `src/backend/src/models/EmailVerificationOtp.model.js` | Hashed registration OTP records with TTL |
+| `PasswordResetToken` | `src/backend/src/models/PasswordResetToken.model.js` | Hashed single-use password reset tokens with TTL |
 
 Parallel schema files remain for Week 1 database tests/backward compatibility. The canonical server import order intentionally uses the runtime files listed above. New code must not create a separate Mongoose connection or redefine a registered model.
 
@@ -194,6 +196,14 @@ Indexes:
 | `{ citizenId: 1 }` unique partial | Prevent one submitted CCCD number from backing multiple accounts |
 
 CCCD images are not stored in MongoDB. New submissions bind the identity fields and both image hashes into `docHash`; private Cloudinary asset IDs are exposed only through allowlisted review responses as signed URLs. Rejection removes the Cloudinary images and clears their IDs while retaining audit/hash metadata. Legacy hash-only records remain readable but cannot be approved through the current UI without images.
+
+## EmailVerificationOtp
+
+Registration OTP records store only `otpHash`, never the plaintext code. Records are keyed by lowercase `email`, `purpose`, `attempts`, `expiresAt`, and `consumedAt`. `expiresAt` has a TTL index; resend deletes prior unconsumed registration OTPs for that email.
+
+## PasswordResetToken
+
+Password reset records store `userId`, unique `tokenHash`, `expiresAt`, and `usedAt`. The reset token sent by email is never stored in plaintext. `expiresAt` has a TTL index and tokens are single-use.
 
 ## Query Helpers
 

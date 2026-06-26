@@ -8,7 +8,7 @@
 | Database | MongoDB 8 local or MongoDB Atlas |
 | Containers | Docker + Compose |
 | Contracts | Foundry for build/test/reference contract work |
-| External services | Gemini for AI; Cloudinary for encrypted attachments and authenticated KYC document images |
+| External services | Gemini for AI; Cloudinary for encrypted attachments and authenticated KYC document images; Resend for production email OTP/reset delivery |
 
 ## Local Development
 
@@ -46,6 +46,10 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 | `PORT`, `NODE_ENV`, `CORS_ORIGIN` | Production | API runtime and allowed frontend origin |
 | `JWT_SECRET`, `JWT_REFRESH_SECRET` | Yes | Use different random secrets, at least 32 chars |
 | `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` | No | Defaults `15m`, `7d` |
+| `EMAIL_VERIFICATION_REQUIRED` | No | Defaults enabled; set `false` only for legacy/dev bypass |
+| `RESEND_API_KEY`, `EMAIL_FROM`, `FRONTEND_URL` | For email auth | Registration OTP and password reset links |
+| `EMAIL_OTP_EXPIRES_MINUTES`, `PASSWORD_RESET_EXPIRES_MINUTES`, `EMAIL_TOKEN_PEPPER` | Recommended | OTP/reset expiry and hash pepper; keep pepper secret |
+| `EMAIL_DEBUG_OTP` | Local/test only | Returns OTP/reset token in responses; do not enable in production |
 | `KYC_REVIEWER_EMAILS` | For KYC review | Comma-separated reviewer account emails; keep empty to deny all reviewers |
 | `GEMINI_API_KEY` | For AI | Gemini API key |
 | `GEMINI_MODEL`, `GEMINI_*_TIMEOUT_MS`, `GEMINI_RETRIES`, `AI_MAX_*` | No | AI model, limits, retry count, and timeouts; moderation defaults to 5 seconds and is capped at 10 seconds |
@@ -83,7 +87,7 @@ The backend syntax step checks `src/backend/server.js` and JavaScript under `src
 
 The deploy workflow conditionally triggers the Render backend after successful CI on `main` using `RENDER_API_KEY` and `RENDER_SERVICE_ID`. Render also watches `main` for automatic deploys. The frontend is built with `VITE_API_URL` set to the production API, and the API allows the production frontend through `CORS_ORIGIN`.
 
-Gemini and Cloudinary are configured on the production backend and have authenticated production smoke coverage. The current frontend forensic flow generates local evidence packages with conversation Room IDs and does not require a public contract address. A production KYC reviewer is allowlisted, and the GitHub `RENDER_API_KEY`/`RENDER_SERVICE_ID` secrets have been validated through a successful manual deploy workflow.
+Gemini and Cloudinary are configured on the production backend and have authenticated production smoke coverage. Email OTP/reset delivery requires a production Resend API key and verified sender. The current frontend forensic flow generates local evidence packages with conversation Room IDs and does not require a public contract address. A production KYC reviewer is allowlisted, and the GitHub `RENDER_API_KEY`/`RENDER_SERVICE_ID` secrets have been validated through a successful manual deploy workflow.
 
 ## Operational Gaps
 
