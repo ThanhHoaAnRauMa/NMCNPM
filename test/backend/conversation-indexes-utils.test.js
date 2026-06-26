@@ -7,7 +7,10 @@ const require = createRequire(import.meta.url)
 const {
   createDirectConversationWithFallback,
   createConversationWithLegacyIndexRetry,
+  dropParallelArrayConversationIndexes,
   isLegacyConversationMemberUniqueIndex,
+  isParallelArrayConversationIndex,
+  isParallelArrayIndexError,
 } = require('../../src/backend/src/utils/conversationIndexes.utils.js')
 const Conversation = require('../../src/backend/src/models/Conversation.model.js')
 
@@ -37,6 +40,76 @@ test('legacy conversation member unique index detection ignores mode-aware index
     }),
     false
   )
+})
+
+test('parallel-array conversation index detection targets archived/deleted membership indexes', () => {
+  assert.equal(
+    isParallelArrayConversationIndex({
+      name: 'members_archivedFor_updatedAt',
+      key: { members: 1, archivedFor: 1, updatedAt: -1 },
+    }),
+    true
+  )
+  assert.equal(
+    isParallelArrayConversationIndex({
+      name: 'members_deletedFor_updatedAt',
+      key: { members: 1, deletedFor: 1, updatedAt: -1 },
+    }),
+    true
+  )
+  assert.equal(
+    isParallelArrayConversationIndex({
+      name: 'members_updatedAt',
+      key: { members: 1, updatedAt: -1 },
+    }),
+    false
+  )
+})
+
+test('parallel-array index errors are detected by code or message', () => {
+  assert.equal(isParallelArrayIndexError({ code: 171 }), true)
+  assert.equal(isParallelArrayIndexError({ message: 'cannot index parallel arrays [archivedFor] [members]' }), true)
+  assert.equal(isParallelArrayIndexError({ code: 11000, message: 'duplicate key' }), false)
+})
+
+test('drops stale conversation indexes that combine parallel arrays', async () => {
+  const droppedIndexes = []
+  const Conversation = {
+    collection: {
+      async indexes() {
+        return [
+          { name: '_id_', key: { _id: 1 } },
+          { name: 'members_archivedFor_updatedAt', key: { members: 1, archivedFor: 1, updatedAt: -1 } },
+          { name: 'members_deletedFor_updatedAt', key: { members: 1, deletedFor: 1, updatedAt: -1 } },
+          { name: 'members_updatedAt', key: { members: 1, updatedAt: -1 } },
+        ]
+      },
+      async dropIndex(name) {
+        droppedIndexes.push(name)
+      },
+    },
+  }
+
+  const dropped = await dropParallelArrayConversationIndexes(Conversation)
+
+  assert.deepEqual(dropped, ['members_archivedFor_updatedAt', 'members_deletedFor_updatedAt'])
+  assert.deepEqual(droppedIndexes, dropped)
+})
+
+test('dropping stale conversation indexes is a no-op before the collection exists', async () => {
+  const Conversation = {
+    collection: {
+      async indexes() {
+        const error = new Error('ns does not exist')
+        error.code = 26
+        throw error
+      },
+    },
+  }
+
+  const dropped = await dropParallelArrayConversationIndexes(Conversation)
+
+  assert.deepEqual(dropped, [])
 })
 
 test('conversation creation retries after dropping legacy unique member index', async () => {

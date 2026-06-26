@@ -2,7 +2,7 @@ const mongoose = require("../utils/mongoose");
 const Conversation = require("../models/Conversation.model");
 const User = require("../models/User.model");
 const { conversationRoomId } = require("../models/Conversation.model");
-const { createDirectConversationWithFallback } = require("../utils/conversationIndexes.utils");
+const { createDirectConversationWithFallback, dropParallelArrayConversationIndexes, ensureConversationIndexesCompatible, isParallelArrayIndexError } = require("../utils/conversationIndexes.utils");
 
 function validId(value) {
   return mongoose.Types.ObjectId.isValid(value);
@@ -163,6 +163,7 @@ exports.startDirectConversation = async (req, res) => {
       type: { $in: ["DIRECT", "direct"] },
       members: { $all: [req.userId, otherId], $size: 2 },
     };
+    await ensureConversationIndexesCompatible(Conversation);
     let conversation = await Conversation.findOne(exactConversationQuery).sort({ createdAt: 1 });
     let isNew = false;
     let warningCode = null;
@@ -186,7 +187,13 @@ exports.startDirectConversation = async (req, res) => {
       }
     }
     if (!isNew) {
-      await Conversation.updateOne({ _id: conversation._id }, { $pull: { archivedFor: req.userId, deletedFor: req.userId } });
+      try {
+        await Conversation.updateOne({ _id: conversation._id }, { $pull: { archivedFor: req.userId, deletedFor: req.userId } });
+      } catch (updateError) {
+        if (!isParallelArrayIndexError(updateError)) throw updateError;
+        await dropParallelArrayConversationIndexes(Conversation);
+        await Conversation.updateOne({ _id: conversation._id }, { $pull: { archivedFor: req.userId, deletedFor: req.userId } });
+      }
       conversation = await Conversation.findById(conversation._id);
     }
     const publicOtherUser = otherUser.toObject();
