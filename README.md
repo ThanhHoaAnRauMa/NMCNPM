@@ -39,6 +39,19 @@ Open:
 * Frontend: `http://localhost:5173`
 * API health: `http://localhost:3000/health`
 
+Registration sends a 6-digit OTP before creating the account. To send OTP email
+through Gmail, set these values in `.env`:
+
+```env
+EMAIL_FROM_NAME=Secure Chat Forensics
+EMAIL_USER=your_gmail_address@gmail.com
+EMAIL_PASSWORD=your_google_app_password
+EMAIL_FROM=
+```
+
+Use a Google App Password for `EMAIL_PASSWORD`, not your normal Google account
+password. Leave `EMAIL_FROM` empty unless you have a verified sender alias.
+
 ### Local Node.js
 
 Node.js 24 and MongoDB are required.

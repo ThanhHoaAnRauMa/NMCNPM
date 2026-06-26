@@ -1,10 +1,16 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
+const RegistrationOtp = require("../models/RegistrationOtp.model");
 const User = require("../models/User.model");
+const { hasSmtpConfig, sendRegistrationOtpEmail } = require("../utils/email.utils");
 const { generateTokens, verifyRefreshToken } = require("../utils/jwt.utils");
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000;
 const PASSWORD_MIN_LENGTH = 8;
+const REGISTRATION_OTP_EXPIRES_MINUTES = Number(process.env.REGISTRATION_OTP_EXPIRES_MINUTES || 10);
+const REGISTRATION_OTP_MAX_ATTEMPTS = Number(process.env.REGISTRATION_OTP_MAX_ATTEMPTS || 5);
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function exactCaseInsensitive(value) {
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -13,6 +19,10 @@ function exactCaseInsensitive(value) {
 
 function normalizeUsername(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function generateOtp() {
+  return String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
 }
 
 function uniqueById(users = []) {
@@ -58,40 +68,139 @@ function publicUser(user) {
   };
 }
 
+function registrationPayload(body) {
+  return {
+    username: typeof body.username === "string" ? body.username.trim() : "",
+    email: typeof body.email === "string" ? body.email.trim().toLowerCase() : "",
+    password: typeof body.password === "string" ? body.password : "",
+    confirmPassword: typeof body.confirmPassword === "string" ? body.confirmPassword : "",
+  };
+}
+
+function validateRegistrationInput({ username, email, password, confirmPassword }) {
+  if (!username || !email || !password || !confirmPassword) {
+    return { status: 400, body: { success: false, message: "Username, email, password and password confirmation are required.", code: "MISSING_FIELDS" } };
+  }
+  if (!EMAIL_PATTERN.test(email)) {
+    return { status: 400, body: { success: false, message: "Email address is invalid.", code: "INVALID_EMAIL" } };
+  }
+  if (password.length < PASSWORD_MIN_LENGTH || password.length > 72) {
+    return { status: 400, body: { success: false, message: "Password must contain 8 to 72 characters.", code: "INVALID_PASSWORD_LENGTH" } };
+  }
+  if (password !== confirmPassword) {
+    return { status: 400, body: { success: false, message: "Password confirmation does not match.", code: "PASSWORD_MISMATCH" } };
+  }
+  return null;
+}
+
+async function ensureAccountAvailable({ email, username, usernameLower }) {
+  const existing = await User.findOne({
+    $or: [{ email }, { usernameLower }, { username: exactCaseInsensitive(username) }],
+  }).select("email username usernameLower");
+  if (existing) {
+    return existing.email === email ? "EMAIL_ALREADY_EXISTS" : "USERNAME_ALREADY_EXISTS";
+  }
+
+  const pending = await RegistrationOtp.findOne({
+    $or: [{ email }, { usernameLower }],
+  }).select("email usernameLower");
+  if (pending && pending.email !== email) return "USERNAME_PENDING_VERIFICATION";
+  return null;
+}
+
 exports.register = async (req, res) => {
+  const payload = registrationPayload(req.body);
+  const validationError = validateRegistrationInput(payload);
+  if (validationError) return res.status(validationError.status).json(validationError.body);
+
+  const { username, email, password } = payload;
+  const usernameLower = normalizeUsername(username);
+
   try {
-    const username = typeof req.body.username === "string" ? req.body.username.trim() : "";
+    const unavailableCode = await ensureAccountAvailable({ email, username, usernameLower });
+    if (unavailableCode) {
+      return res.status(409).json({ success: false, message: "Email or username already exists.", code: unavailableCode });
+    }
+
+    const otp = generateOtp();
+    const expiresAt = new Date(Date.now() + REGISTRATION_OTP_EXPIRES_MINUTES * 60 * 1000);
+    await RegistrationOtp.deleteOne({ email });
+    await RegistrationOtp.create({
+      username,
+      usernameLower,
+      email,
+      passwordHash: await bcrypt.hash(password, 12),
+      otpHash: await bcrypt.hash(otp, 12),
+      expiresAt,
+    });
+
+    const emailResult = await sendRegistrationOtpEmail({ email, username, otp, expiresInMinutes: REGISTRATION_OTP_EXPIRES_MINUTES });
+    return res.status(200).json({
+      success: true,
+      message: "Registration OTP sent. Please check your email.",
+      code: "REGISTRATION_OTP_SENT",
+      expiresAt,
+      devOtp: emailResult.skipped && !hasSmtpConfig() ? otp : undefined,
+    });
+  } catch (error) {
+    await RegistrationOtp.deleteOne({ email }).catch(() => {});
+    if (error.code === "EMAIL_NOT_CONFIGURED") {
+      return res.status(500).json({ success: false, message: "Email sender is not configured.", code: "EMAIL_NOT_CONFIGURED" });
+    }
+    if (error.code === 11000) {
+      return res.status(409).json({ success: false, message: "Email or username already exists.", code: "DUPLICATE_KEY" });
+    }
+    console.error("[register]", error);
+    return res.status(500).json({ success: false, message: "Internal server error.", code: "SERVER_ERROR" });
+  }
+};
+
+exports.verifyRegistrationOtp = async (req, res) => {
+  try {
     const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
-    const password = typeof req.body.password === "string" ? req.body.password : "";
-    const confirmPassword = typeof req.body.confirmPassword === "string" ? req.body.confirmPassword : "";
-
-    if (!username || !email || !password || !confirmPassword) {
-      return res.status(400).json({ success: false, message: "Username, email, password and password confirmation are required.", code: "MISSING_FIELDS" });
+    const otp = typeof req.body.otp === "string" ? req.body.otp.trim() : "";
+    if (!email || !otp) {
+      return res.status(400).json({ success: false, message: "Email and OTP are required.", code: "MISSING_FIELDS" });
     }
-    if (password.length < PASSWORD_MIN_LENGTH || password.length > 72) {
-      return res.status(400).json({ success: false, message: "Password must contain 8 to 72 characters.", code: "INVALID_PASSWORD_LENGTH" });
-    }
-    if (password !== confirmPassword) {
-      return res.status(400).json({ success: false, message: "Password confirmation does not match.", code: "PASSWORD_MISMATCH" });
+    if (!/^\d{6}$/.test(otp)) {
+      return res.status(400).json({ success: false, message: "OTP must contain 6 digits.", code: "INVALID_OTP_FORMAT" });
     }
 
-    const usernameLower = normalizeUsername(username);
-    const existing = await User.findOne({
-      $or: [{ email }, { usernameLower }, { username: exactCaseInsensitive(username) }],
-    }).select("email username usernameLower");
-    if (existing) {
-      const code = existing.email === email ? "EMAIL_ALREADY_EXISTS" : "USERNAME_ALREADY_EXISTS";
-      return res.status(409).json({ success: false, message: "Email or username already exists.", code });
+    const pending = await RegistrationOtp.findOne({ email }).select("+passwordHash +otpHash");
+    if (!pending) {
+      return res.status(404).json({ success: false, message: "Registration OTP was not found or has expired.", code: "OTP_NOT_FOUND" });
+    }
+    if (pending.expiresAt <= new Date()) {
+      await RegistrationOtp.deleteOne({ _id: pending._id });
+      return res.status(410).json({ success: false, message: "Registration OTP has expired.", code: "OTP_EXPIRED" });
+    }
+    if (pending.attempts >= REGISTRATION_OTP_MAX_ATTEMPTS) {
+      await RegistrationOtp.deleteOne({ _id: pending._id });
+      return res.status(429).json({ success: false, message: "Too many OTP attempts. Please register again.", code: "OTP_ATTEMPTS_EXCEEDED" });
     }
 
-    const user = await User.create({ username, email, password: await bcrypt.hash(password, 12) });
+    const isValidOtp = await bcrypt.compare(otp, pending.otpHash);
+    if (!isValidOtp) {
+      pending.attempts += 1;
+      await pending.save();
+      return res.status(401).json({ success: false, message: "OTP is incorrect.", code: "INVALID_OTP" });
+    }
+
+    const unavailableCode = await ensureAccountAvailable({ email: pending.email, username: pending.username, usernameLower: pending.usernameLower });
+    if (unavailableCode && unavailableCode !== "USERNAME_PENDING_VERIFICATION") {
+      await RegistrationOtp.deleteOne({ _id: pending._id });
+      return res.status(409).json({ success: false, message: "Email or username already exists.", code: unavailableCode });
+    }
+
+    const user = await User.create({ username: pending.username, email: pending.email, password: pending.passwordHash });
+    await RegistrationOtp.deleteOne({ _id: pending._id });
     const tokens = generateTokens(user._id.toString());
     return res.status(201).json({ success: true, message: "Registration successful.", user: publicUser(user), ...tokens });
   } catch (error) {
     if (error.code === 11000) {
       return res.status(409).json({ success: false, message: "Email or username already exists.", code: "DUPLICATE_KEY" });
     }
-    console.error("[register]", error);
+    console.error("[verifyRegistrationOtp]", error);
     return res.status(500).json({ success: false, message: "Internal server error.", code: "SERVER_ERROR" });
   }
 };

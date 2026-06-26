@@ -3,9 +3,12 @@ import { API_URL } from '../lib/api.js'
 
 export default function AuthScreen({ authenticate }) {
   const [mode, setMode] = useState('login')
-  const [form, setForm] = useState({ username: '', email: '', identifier: '', password: '', confirmPassword: '' })
+  const [form, setForm] = useState({ username: '', email: '', identifier: '', password: '', confirmPassword: '', otp: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [otpSent, setOtpSent] = useState(false)
+  const [pendingEmail, setPendingEmail] = useState('')
+  const [devOtp, setDevOtp] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -26,15 +29,42 @@ export default function AuthScreen({ authenticate }) {
     }
     setLoading(true)
     try {
+      if (mode === 'register' && otpSent) {
+        await authenticate('register/verify', { email: pendingEmail, otp: form.otp })
+        return
+      }
+
       const payload = mode === 'register'
         ? { username: form.username, email: form.email, password: form.password, confirmPassword: form.confirmPassword }
         : { identifier: form.identifier, password: form.password }
-      await authenticate(mode, payload)
+      if (mode === 'register') {
+        const response = await fetch(`${API_URL}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(result.message || 'Unable to send OTP.')
+        setPendingEmail(payload.email.trim().toLowerCase())
+        setDevOtp(result.devOtp || '')
+        setOtpSent(true)
+      } else {
+        await authenticate(mode, payload)
+      }
     } catch (requestError) {
       setError(requestError.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  const switchMode = () => {
+    setMode(mode === 'login' ? 'register' : 'login')
+    setError('')
+    setOtpSent(false)
+    setPendingEmail('')
+    setDevOtp('')
+    setForm({ username: '', email: '', identifier: '', password: '', confirmPassword: '', otp: '' })
   }
 
   return (
@@ -83,13 +113,13 @@ export default function AuthScreen({ authenticate }) {
               {mode === 'register' && (
                 <label className="block text-xs font-semibold text-slate-300">
                   Username
-                  <input className="field mt-2" minLength={3} maxLength={64} required value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
+                  <input className="field mt-2" disabled={otpSent} minLength={3} maxLength={64} required value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
                 </label>
               )}
               {mode === 'register' ? (
                 <label className="block text-xs font-semibold text-slate-300">
                   Email
-                  <input className="field mt-2" type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+                  <input className="field mt-2" disabled={otpSent} type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
                 </label>
               ) : (
                 <label className="block text-xs font-semibold text-slate-300">
@@ -99,21 +129,33 @@ export default function AuthScreen({ authenticate }) {
               )}
               <label className="block text-xs font-semibold text-slate-300">
                 Mật khẩu
-                <input autoComplete={mode === 'register' ? 'new-password' : 'current-password'} className="field mt-2" type="password" minLength={8} maxLength={72} required value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+                <input autoComplete={mode === 'register' ? 'new-password' : 'current-password'} className="field mt-2" disabled={otpSent} type="password" minLength={8} maxLength={72} required value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
               </label>
               {mode === 'register' && (
                 <label className="block text-xs font-semibold text-slate-300">
                   Xác nhận mật khẩu
-                  <input autoComplete="new-password" className="field mt-2" type="password" minLength={8} maxLength={72} required value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
+                  <input autoComplete="new-password" className="field mt-2" disabled={otpSent} type="password" minLength={8} maxLength={72} required value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
+                </label>
+              )}
+              {mode === 'register' && otpSent && (
+                <label className="block text-xs font-semibold text-slate-300">
+                  OTP
+                  <input autoComplete="one-time-code" className="field mt-2 tracking-[0.35em]" inputMode="numeric" maxLength={6} minLength={6} pattern="[0-9]{6}" required value={form.otp} onChange={(event) => setForm({ ...form, otp: event.target.value.replace(/\D/g, '').slice(0, 6) })} />
+                  {devOtp && <span className="mt-2 block text-xs text-amber">Ma test local: {devOtp}</span>}
                 </label>
               )}
               {error && <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
               <button className="btn-primary mt-2 w-full" disabled={loading} type="submit">
-                {loading ? 'Đang xử lý...' : mode === 'login' ? 'Đăng nhập' : 'Đăng ký và tiếp tục'}
+                {loading ? 'Đang xử lý...' : mode === 'login' ? 'Đăng nhập' : otpSent ? 'Xác nhận OTP' : 'Gửi mã OTP'}
               </button>
+              {mode === 'register' && otpSent && (
+                <button className="w-full text-center text-xs text-slate-400 hover:text-paper" onClick={() => { setOtpSent(false); setPendingEmail(''); setDevOtp(''); setForm({ ...form, otp: '' }) }} type="button">
+                  Đổi thông tin đăng ký
+                </button>
+              )}
             </form>
 
-            <button className="mt-6 w-full text-center text-sm text-slate-400 hover:text-paper" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }} type="button">
+            <button className="mt-6 w-full text-center text-sm text-slate-400 hover:text-paper" onClick={switchMode} type="button">
               {mode === 'login' ? 'Chưa có tài khoản? Đăng ký' : 'Đã có tài khoản? Đăng nhập'}
             </button>
           </div>

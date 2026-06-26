@@ -67,8 +67,11 @@ after(async () => {
 
 async function register(username, email) {
   const response = await request(app).post('/auth/register').send({ username, email, password: 'correct-horse-42', confirmPassword: 'correct-horse-42' })
-  assert.equal(response.status, 201, `register ${username}/${email} failed: ${JSON.stringify(response.body)}`)
-  return response.body
+  assert.equal(response.status, 200, `request OTP ${username}/${email} failed: ${JSON.stringify(response.body)}`)
+  assert.match(response.body.devOtp, /^\d{6}$/)
+  const verified = await request(app).post('/auth/register/verify').send({ email, otp: response.body.devOtp })
+  assert.equal(verified.status, 201, `verify OTP ${username}/${email} failed: ${JSON.stringify(verified.body)}`)
+  return verified.body
 }
 
 async function submitKyc(account, overrides = {}) {
@@ -106,6 +109,26 @@ describe('integrated feature API', () => {
     })
     assert.equal(mismatch.status, 400)
     assert.equal(mismatch.body.code, 'PASSWORD_MISMATCH')
+  })
+
+  test('requires a valid email OTP before creating an account', async () => {
+    const requested = await request(app).post('/auth/register').send({
+      username: 'otpAlice',
+      email: 'otp.alice@example.com',
+      password: 'correct-horse-42',
+      confirmPassword: 'correct-horse-42',
+    })
+    assert.equal(requested.status, 200)
+    assert.equal(requested.body.code, 'REGISTRATION_OTP_SENT')
+
+    const rejected = await request(app).post('/auth/register/verify').send({ email: 'otp.alice@example.com', otp: '000000' })
+    assert.equal(rejected.status, 401)
+    assert.equal(rejected.body.code, 'INVALID_OTP')
+    assert.equal(await User.countDocuments({ email: 'otp.alice@example.com' }), 0)
+
+    const verified = await request(app).post('/auth/register/verify').send({ email: 'otp.alice@example.com', otp: requested.body.devOtp })
+    assert.equal(verified.status, 201)
+    assert.equal(verified.body.user.email, 'otp.alice@example.com')
   })
 
   test('logs in with username, normalized email, and the legacy email field', async () => {

@@ -8,7 +8,7 @@
 | Database | MongoDB 8 local or MongoDB Atlas |
 | Containers | Docker + Compose |
 | Contracts | Foundry for build/test/reference contract work |
-| External services | Gemini for AI; Cloudinary for encrypted attachments and authenticated KYC document images |
+| External services | Gmail SMTP for registration OTP; Gemini for AI; Cloudinary for encrypted attachments and authenticated KYC document images |
 
 ## Local Development
 
@@ -46,6 +46,8 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 | `PORT`, `NODE_ENV`, `CORS_ORIGIN` | Production | API runtime and allowed frontend origin |
 | `JWT_SECRET`, `JWT_REFRESH_SECRET` | Yes | Use different random secrets, at least 32 chars |
 | `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` | No | Defaults `15m`, `7d` |
+| `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM_NAME`, `EMAIL_FROM` | For registration | Gmail sender account, Google App Password, display name, and optional verified sender alias |
+| `REGISTRATION_OTP_EXPIRES_MINUTES`, `REGISTRATION_OTP_MAX_ATTEMPTS` | No | Defaults `10`, `5` |
 | `KYC_REVIEWER_EMAILS` | For KYC review | Comma-separated reviewer account emails; keep empty to deny all reviewers |
 | `GEMINI_API_KEY` | For AI | Gemini API key |
 | `GEMINI_MODEL`, `GEMINI_*_TIMEOUT_MS`, `GEMINI_RETRIES`, `AI_MAX_*` | No | AI model, limits, retry count, and timeouts; moderation defaults to 5 seconds and is capped at 10 seconds |

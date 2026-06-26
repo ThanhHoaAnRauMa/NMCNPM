@@ -37,6 +37,9 @@ export function useSession() {
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new ApiError(payload.message || 'Không thể xác thực.', response.status, payload)
+      if (!payload.user || !payload.accessToken || !payload.refreshToken) {
+        throw new ApiError(payload.message || 'Authentication did not return a complete session.', response.status, payload)
+      }
       setSession({ user: payload.user, accessToken: payload.accessToken, refreshToken: payload.refreshToken })
       return payload
     } catch (error) {
