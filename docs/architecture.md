@@ -26,6 +26,7 @@ flowchart TD
   Models --> Mongo[(MongoDB)]
   REST --> Gemini[Gemini REST API]
   REST --> Cloudinary[Cloudinary encrypted blobs]
+  REST --> LocalFiles[Local encrypted blob fallback]
 ```
 
 `src/index.js` is the only production entry point. `src/backend/server.js` is a compatibility launcher that dynamically imports it. Feature models use `src/backend/src/utils/mongoose.js` so nested dependencies cannot create a second disconnected Mongoose singleton.
@@ -34,11 +35,11 @@ flowchart TD
 
 1. Each browser device creates an RSA-OAEP key pair and an ECDSA P-256 key pair.
 2. Private JWKs are stored in IndexedDB; the public bundle is stored on `User.publicKey`. Users can export a password-encrypted PBKDF2/AES-GCM backup and restore it only to the same account.
-3. Before sending text, the client explicitly calls AI moderation with plaintext.
-4. The client creates a random AES-256-GCM key, encrypts content, and RSA-wraps that AES key for every member.
+3. The client maintains an AES-256-GCM session key per conversation, rotates it in-browser, and uses a fresh 96-bit IV for every message/file.
+4. The current session key is RSA-OAEP-SHA256 wrapped for every member inside the envelope so recipients can decrypt after refresh without server plaintext access.
 5. The client signs the serialized encrypted envelope and emits it through authenticated Socket.IO.
-6. The backend verifies that signature against the account's current public key; stale devices receive `KEY_MISMATCH` before persistence or relay.
-7. KYC-mode ciphertext and the verified sender public-key snapshot are stored in MongoDB. Privacy-mode ciphertext is relayed only.
+6. The backend validates envelope shape and verifies that signature against the account's current public key; stale devices receive `KEY_MISMATCH` before persistence or relay.
+7. KYC-mode and Privacy-mode ciphertext plus the verified sender public-key snapshot are stored in MongoDB. Privacy-mode ciphertext is also queued per recipient as temporary ciphertext when a recipient is offline or has not opened the conversation.
 8. Recipients unwrap/decrypt locally and verify against the message snapshot, falling back to the sender's current public key for legacy records.
 
 At session startup, the frontend compares its IndexedDB public bundle with `/users/me.publicKey` and blocks signing/encryption when they differ. A public-key update notifies online conversation participants to refresh recipient keys. Changing a public key does not re-encrypt history. Password-encrypted backup provides manual multi-device recovery; automatic trusted-device synchronization is not implemented.
@@ -50,7 +51,7 @@ At session startup, the frontend compares its IndexedDB public bundle with `/use
 3. It performs case-insensitive substring matching and displays sender, timestamp, highlighted content, and a jump-to-message action.
 4. Undecryptable records are counted and excluded; plaintext is not uploaded for this UI flow.
 
-Privacy conversations search only messages still present in the current browser session because their ciphertext is not persisted. The opt-in `MessageSearch` TTL API remains available for compatibility but is not used by the conversation search panel.
+Privacy conversations search locally decrypted ciphertext history from `Message`; plaintext is never uploaded for this UI flow. The opt-in `MessageSearch` TTL API remains available for compatibility but is not used by the conversation search panel.
 
 ## AI Summary Flow
 
@@ -69,9 +70,9 @@ Transcript plaintext in an exported package is for authorized human review; its 
 
 1. Registration remains available without KYC.
 2. The browser hashes both CCCD images, combines those hashes with normalized identity fields, hashes the canonical payload, and signs it with the current device key.
-3. The backend recomputes the payload/hash, verifies the account public key/signature, and uploads both images as authenticated Cloudinary assets.
+3. The backend recomputes the payload/hash, verifies the account public key/signature, and stores both images as authenticated Cloudinary assets or local private fallback files.
 4. An allowlisted reviewer receives identity fields plus signed image URLs and records `VERIFIED` or `REJECTED` with audit metadata.
-5. KYC direct/group creation and KYC group membership require every participant to be verified. Privacy mode does not require KYC.
+5. KYC direct/group creation, KYC group membership, and KYC-mode sending require every participant to be verified. Privacy mode does not require KYC.
 
 ## HTTP Boundaries
 
@@ -85,7 +86,7 @@ Transcript plaintext in an exported package is for authorized human review; its 
 
 ## Realtime Boundaries
 
-Socket authentication occurs during the handshake with `auth.token`. Each connection joins its authenticated `user:<id>` room so REST conversation creation and persisted message/file sends can notify members to refresh the canonical conversation list immediately. Room join, send, seen, typing, and missed-message operations verify conversation membership. `user_online` no longer controls identity and cannot impersonate another user. The chat workspace also keeps a small per-user/per-conversation in-memory message cache so switching application tabs does not discard already hydrated messages; Privacy-mode cache remains browser-session-only.
+Socket authentication occurs during the handshake with `auth.token`. Each connection joins its authenticated `user:<id>` room so REST conversation creation and persisted message/file sends can notify members to refresh the canonical conversation list immediately. Room join, send, seen, typing, and missed-message operations verify conversation membership. `user_online` no longer controls identity and cannot impersonate another user. The chat workspace also keeps a small per-user/per-conversation in-memory message cache so switching application tabs does not discard already hydrated messages.
 
 ## Data Ownership
 
@@ -94,13 +95,13 @@ Socket authentication occurs during the handshake with `auth.token`. Each connec
 | Password hash, account metadata | MongoDB |
 | Public encryption/signing keys | MongoDB |
 | Private encryption/signing keys | Browser IndexedDB |
-| KYC-mode message ciphertext/signature | MongoDB |
-| Privacy-mode ciphertext | In transit only |
+| KYC-mode message ciphertext/signature | MongoDB `Message` |
+| Privacy-mode message ciphertext/signature | MongoDB `Message`; `PrivacyDelivery` TTL mailbox only for offline/unopened delivery |
 | Search plaintext snippet | MongoDB TTL collection, opt-in, 24h |
 | AI source plaintext | Request memory only |
 | AI summary | MongoDB TTL cache, 1h |
-| Encrypted attachment blob | Cloudinary |
-| Authenticated CCCD images | Cloudinary; signed reviewer delivery only |
+| Encrypted attachment blob | Cloudinary or local private fallback; ciphertext only |
+| Authenticated CCCD images | Cloudinary or local private fallback; signed reviewer delivery only |
 | Merkle roots/proofs | Browser-generated evidence package; Solidity contract remains in repo for tests/reference |
 
 ## Known Architecture Gaps

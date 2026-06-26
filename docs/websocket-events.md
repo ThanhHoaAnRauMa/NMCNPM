@@ -16,9 +16,9 @@ The handshake JWT determines `socket.userId`. Emitting `user_online` cannot chan
 | --- | --- | --- |
 | `join_conversation` / `join` | `{ conversationId }` | Membership check, then join room |
 | `leave_conversation` / `leave` | `{ conversationId }` | Leave room |
-| `send_message` | `{ conversationId, encryptedContent, signature, msgType?, replyTo?, tempId? }` | Validate membership/current sender key, join room, then persist and broadcast KYC-mode ciphertext |
-| `send_private_message` | `{ conversationId, encryptedContent, signature, tempId }` | Validate the current sender key, then relay Privacy-mode ciphertext without persistence |
-| `ack_private_message` | `{ tempId }` | Clear relay tracking after two participant ACKs |
+| `send_message` | `{ conversationId, encryptedContent, signature, msgType?, replyTo?, tempId? }` | Validate membership/current sender key/KYC eligibility, join room, then persist and broadcast KYC-mode ciphertext |
+| `send_private_message` | `{ conversationId, encryptedContent, signature, tempId }` | Validate the current sender key, persist Privacy-mode ciphertext, then relay/queue it |
+| `ack_private_message` | `{ tempId }` | Clear this recipient's queued Privacy ciphertext after local receipt/decryption attempt |
 | `mark_seen` | `{ messageId, conversationId }` | Member-only seen update |
 | `typing` / `stop_typing` | `{ conversationId }` | Relay only after authorized room join |
 | `get_missed_messages` | `{ conversationId, since }` | Return up to 100 persisted messages after timestamp |
@@ -35,8 +35,8 @@ After a persisted message or encrypted file is stored, the server also emits `co
 | Event | Important Fields |
 | --- | --- |
 | `new_message` | `_id`, `conversationId`, `senderId`, encrypted payload/signature, `senderPublicKey`, type/status/timestamps, `tempId` |
-| `new_private_message` | `tempId`, conversation/sender ids, encrypted payload/signature, `senderPublicKey`, `createdAt` |
-| `private_message_sent` | `tempId`, `conversationId`, server `createdAt` |
+| `new_private_message` | `_id`, `tempId`, conversation/sender ids, encrypted payload/signature, `senderPublicKey`, `createdAt` |
+| `private_message_sent` | `tempId`, `messageId`, `conversationId`, server `createdAt` |
 | `message_status` | `messageId`, `SENT | DELIVERED | SEEN`, `seenBy?` |
 | `user_typing` / `user_stop_typing` | `userId`, `conversationId` |
 | `user_status` | `userId`, `isOnline`, `lastSeen?`, `reason?` |
@@ -65,7 +65,7 @@ After a persisted message or encrypted file is stored, the server also emits `co
 ## Persistence Rules
 
 * KYC mode: ciphertext/signature are stored and available through HTTP history/recovery.
-* Privacy mode: payload is memory-relayed only; offline recovery and AI summary are unavailable.
+* Privacy mode: ciphertext/signature are stored in `Message` history, then relayed live and queued per recipient while offline or unopened. The delivery queue is deleted on `ack_private_message` or by `PRIVACY_DELIVERY_TTL_HOURS`; AI summary remains unavailable.
 * Attachments use authenticated HTTP upload, then the server emits `new_message` to the room and `conversation_updated` to member user rooms.
 
 ## REST Companion

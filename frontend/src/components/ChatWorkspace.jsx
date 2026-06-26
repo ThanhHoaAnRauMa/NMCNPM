@@ -17,6 +17,41 @@ function uniqueMessages(messages) {
 
 const MESSAGE_CACHE_LIMIT = 200
 const messageMemory = new Map()
+const QUICK_ICONS = ['👍', '😂', '🔥', '❤️', '✅', '🎉']
+const ATTACHMENT_OPTIONS = [
+  { id: 'image', icon: '🖼', label: 'Ảnh', accept: 'image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif' },
+  { id: 'video', icon: '▶', label: 'Video', accept: 'video/mp4,video/webm,video/quicktime,video/x-matroska' },
+  { id: 'pdf', icon: 'PDF', label: 'PDF', accept: 'application/pdf' },
+  { id: 'file', icon: '＋', label: 'File', accept: 'image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv' },
+]
+
+function fileKind(message) {
+  const mime = String(message.fileMime || '').toLowerCase()
+  const name = String(message.fileName || '').toLowerCase()
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('video/')) return 'video'
+  if (mime.startsWith('audio/')) return 'audio'
+  if (mime === 'application/pdf' || name.endsWith('.pdf')) return 'pdf'
+  if (mime.includes('word') || name.endsWith('.doc') || name.endsWith('.docx')) return 'doc'
+  if (mime.includes('sheet') || mime.includes('excel') || name.endsWith('.xls') || name.endsWith('.xlsx')) return 'sheet'
+  return 'file'
+}
+
+function fileIcon(message) {
+  return {
+    image: 'IMG',
+    video: 'VID',
+    audio: 'AUD',
+    pdf: 'PDF',
+    doc: 'DOC',
+    sheet: 'XLS',
+    file: 'FILE',
+  }[fileKind(message)] || 'FILE'
+}
+
+function canPreviewFile(message) {
+  return ['image', 'video', 'audio', 'pdf'].includes(fileKind(message))
+}
 
 function persistedMessageId(message) {
   const id = String(message?._id || '')
@@ -149,9 +184,6 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       .catch((requestError) => active && setError(requestError.message))
       .finally(() => active && setLoading(false))
 
-    if (!socket) return () => { active = false }
-    socket.emit('join_conversation', { conversationId: conversation._id })
-
     const onMessage = async (message) => {
       if (String(message.conversationId) !== String(conversation._id)) return
       const hydrated = await hydrateMessage(message)
@@ -163,17 +195,22 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     }
     const onPrivateMessage = async (message) => {
       if (String(message.conversationId) !== String(conversation._id)) return
-      await onMessage({ ...message, _id: message.tempId, msgType: 'TEXT', status: 'SENT' })
+      await onMessage({
+        ...message,
+        _id: message._id || message.messageId || message.tempId,
+        msgType: message.msgType || 'TEXT',
+        status: message.status || 'SENT',
+      })
       socket.emit('ack_private_message', { tempId: message.tempId })
     }
     const onStatus = ({ messageId, status }) => updateMessages((current) => current.map((message) => String(message._id) === String(messageId) ? { ...message, status } : message))
-    const onPrivateSent = ({ tempId, conversationId, createdAt }) => {
+    const onPrivateSent = ({ tempId, messageId, conversationId, createdAt }) => {
       if (String(conversationId) !== String(conversation._id)) return
       updateMessages((current) => current.map((message) => {
         if (String(message.tempId) !== String(tempId)) return message
-        return { ...message, createdAt: createdAt || message.createdAt, timestamp: createdAt || message.timestamp, status: 'SENT' }
+        return { ...message, _id: messageId || message._id, createdAt: createdAt || message.createdAt, timestamp: createdAt || message.timestamp, status: 'SENT' }
       }))
-      onConversationActivity?.(conversationId, { _id: tempId, tempId, conversationId, senderId: currentUser, msgType: 'TEXT', status: 'SENT', createdAt, timestamp: createdAt })
+      onConversationActivity?.(conversationId, { _id: messageId || tempId, tempId, conversationId, senderId: currentUser, msgType: 'TEXT', status: 'SENT', createdAt, timestamp: createdAt })
     }
     const onTyping = ({ userId: typingUserId, conversationId }) => {
       if (String(conversationId) === String(conversation._id) && typingUserId !== currentUserId) setTypingUsers((current) => [...new Set([...current, typingUserId])])
@@ -185,6 +222,8 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       if (['send_message', 'send_private_message'].includes(payload.event)) setError(payload.message)
     }
 
+    if (!socket) return () => { active = false }
+
     socket.on('new_message', onMessage)
     socket.on('new_private_message', onPrivateMessage)
     socket.on('private_message_sent', onPrivateSent)
@@ -192,6 +231,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     socket.on('user_typing', onTyping)
     socket.on('user_stop_typing', onStopTyping)
     socket.on('socket_error', onSocketError)
+    socket.emit('join_conversation', { conversationId: conversation._id })
 
     return () => {
       active = false
@@ -223,8 +263,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     setError('')
     try {
       ensureReady()
-      await api.post('/ai/moderate', { text: plaintext })
-      const encrypted = await encryptText(plaintext, recipients, identity)
+      const encrypted = await encryptText(plaintext, recipients, identity, { conversationId: conversation._id })
       const tempId = crypto.randomUUID()
       pendingPlaintext.current.set(tempId, plaintext)
       const payload = { conversationId: conversation._id, ...encrypted, msgType: 'TEXT', tempId }
@@ -254,6 +293,17 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     typingTimer.current = setTimeout(() => socket.emit('stop_typing', { conversationId: conversation._id }), 900)
   }
 
+  const insertQuickIcon = (icon) => {
+    const separator = draft && !draft.endsWith(' ') ? ' ' : ''
+    updateDraft(`${draft}${separator}${icon} `)
+  }
+
+  const chooseAttachment = (accept) => {
+    if (!fileInput.current) return
+    fileInput.current.accept = accept
+    fileInput.current.click()
+  }
+
   const uploadFile = async (event) => {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -262,7 +312,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
     setError('')
     try {
       ensureReady()
-      const encrypted = await encryptFile(file, recipients, identity)
+      const encrypted = await encryptFile(file, recipients, identity, { conversationId: conversation._id })
       const tempId = crypto.randomUUID()
       const formData = new FormData()
       formData.append('file', encrypted.blob, `${file.name}.enc`)
@@ -290,6 +340,11 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
       if (!response.ok) throw new Error('Không tải được encrypted blob.')
       const blob = await decryptFile(message.encryptedContent, await response.arrayBuffer(), currentUserId, identity)
       const url = URL.createObjectURL(blob)
+      if (canPreviewFile(message)) {
+        window.open(url, '_blank', 'noopener,noreferrer')
+        setTimeout(() => URL.revokeObjectURL(url), 60000)
+        return
+      }
       const anchor = document.createElement('a')
       anchor.href = url
       anchor.download = message.fileName || 'decrypted-file'
@@ -407,7 +462,7 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
               <KycBadge user={peer} />
             </h2>
             <button className="mt-1 block max-w-full truncate font-mono text-[10px] text-slate-600 hover:text-mint" onClick={copyRoomId} title={currentRoomId} type="button">Room ID: {shortRoomId}</button>
-            <p className="mt-1 text-[11px] text-slate-500">{members.length} thành viên · <span className={isPrivacy ? 'text-amber' : 'text-mint'}>{isPrivacy ? 'Privacy / ephemeral' : 'KYC / persisted ciphertext'}</span></p>
+            <p className="mt-1 text-[11px] text-slate-500">{members.length} thành viên · <span className={isPrivacy ? 'text-amber' : 'text-mint'}>{isPrivacy ? 'Privacy / persisted ciphertext' : 'KYC / persisted ciphertext'}</span></p>
           </div>
           <div className="flex shrink-0 gap-2">
             <button className="btn-secondary" onClick={() => setPanel(panel === 'search' ? null : 'search')}>Tìm kiếm</button>
@@ -433,8 +488,8 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
                   )}
                   {message.msgType === 'FILE' ? (
                     <button className="flex w-full items-center gap-3 text-left" onClick={() => openFile(message)}>
-                      <span className="grid h-10 w-10 place-items-center rounded-xl bg-ink text-[10px] font-bold text-mint">FILE</span>
-                      <span className="min-w-0"><strong className="block truncate text-sm">{message.fileName || 'Tệp mã hóa'}</strong><small className="text-slate-500">{fileSize(message.fileSizeBytes)} · giải mã khi tải</small></span>
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-ink text-[10px] font-bold text-mint">{fileIcon(message)}</span>
+                      <span className="min-w-0"><strong className="block truncate text-sm">{message.fileName || 'Tệp mã hóa'}</strong><small className="text-slate-500">{fileSize(message.fileSizeBytes)} · {canPreviewFile(message) ? 'giải mã và mở xem' : 'giải mã khi tải'}</small></span>
                     </button>
                   ) : <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${message.decrypted ? 'text-paper' : 'italic text-slate-500'}`}>{message.text}</p>}
                   <div className="mt-2 flex items-center justify-end gap-2 text-[9px] uppercase tracking-wider text-slate-600">
@@ -451,9 +506,22 @@ export default function ChatWorkspace({ api, socket, conversation, currentUser, 
 
         <div className="min-h-5 px-7 text-[10px] text-mint">{otherTyping ? `${otherTyping} đang nhập...` : ''}</div>
         <form className="border-t border-line p-4 sm:p-5" onSubmit={send}>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap gap-1.5">
+              {ATTACHMENT_OPTIONS.map((option) => (
+                <button className="grid h-8 min-w-8 place-items-center rounded-lg border border-line px-2 text-[10px] font-bold text-slate-400 transition hover:border-mint/50 hover:text-mint disabled:opacity-40" disabled={sending || keyStatus !== 'ready'} key={option.id} onClick={() => chooseAttachment(option.accept)} title={`Gửi ${option.label} mã hóa`} type="button">
+                  {option.icon}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {QUICK_ICONS.map((icon) => (
+                <button className="grid h-8 w-8 place-items-center rounded-lg border border-line text-sm transition hover:border-amber/60 hover:bg-amber/10 disabled:opacity-40" disabled={sending || keyStatus !== 'ready'} key={icon} onClick={() => insertQuickIcon(icon)} title="Thêm icon vào tin nhắn" type="button">{icon}</button>
+              ))}
+            </div>
+          </div>
           <div className="flex items-end gap-2 rounded-2xl border border-line bg-ink/70 p-2 focus-within:border-mint/60">
             <input ref={fileInput} className="hidden" type="file" onChange={uploadFile} />
-            <button className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xl text-slate-500 hover:bg-white/5 hover:text-paper" disabled={isPrivacy || sending} onClick={() => fileInput.current?.click()} type="button" title={isPrivacy ? 'Privacy mode không lưu file trên server' : 'Gửi file mã hóa'}>+</button>
             <textarea className="max-h-36 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-slate-600" maxLength={4000} placeholder={keyStatus === 'ready' ? 'Nhập tin nhắn...' : 'Đồng bộ khóa thiết bị để nhắn tin'} rows={1} value={draft} onChange={(event) => updateDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form.requestSubmit() } }} />
             <button className="btn-primary h-10 shrink-0" disabled={!draft.trim() || sending || keyStatus !== 'ready'} type="submit">{sending ? '...' : 'Gửi'}</button>
           </div>

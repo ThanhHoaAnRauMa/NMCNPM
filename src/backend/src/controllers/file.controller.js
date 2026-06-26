@@ -3,7 +3,9 @@ const Conversation = require("../models/Conversation.model");
 const Message = require("../models/Message.model");
 const User = require("../models/User.model");
 const { notifyConversationMembers } = require("../socket/chat.socket");
-const { uploadToCloudinary } = require("../utils/cloudinary.utils");
+const { validateKycConversationMembers } = require("../utils/conversationSecurity.utils");
+const fileStorage = require("../utils/fileStorage.utils");
+const { validateEncryptedEnvelope } = require("../utils/encryptedEnvelope.utils");
 const { verifyEnvelopeSignature } = require("../utils/signature.utils");
 
 async function memberConversation(conversationId, userId) {
@@ -25,29 +27,25 @@ exports.uploadFile = async (req, res) => {
       return res.status(413).json({ success: false, message: "Encrypted file envelope is too large." });
     }
 
-    let envelope;
-    try {
-      envelope = JSON.parse(encryptedContent);
-    } catch (_error) {
-      return res.status(400).json({ success: false, message: "Invalid encrypted file envelope." });
-    }
-    if (envelope?.v !== 1 || envelope?.kind !== "file" || !envelope?.iv || !envelope?.keys) {
-      return res.status(400).json({ success: false, message: "Invalid encrypted file envelope." });
-    }
-
     const conversation = await memberConversation(conversationId, req.userId);
     if (!conversation) return res.status(404).json({ success: false, message: "Conversation not found or access denied." });
-    if (conversation.members.some((memberId) => !envelope.keys[memberId.toString()])) {
-      return res.status(400).json({ success: false, message: "Encrypted file must include a wrapped key for every member." });
+    const kycValidation = await validateKycConversationMembers(conversation);
+    if (!kycValidation.valid) {
+      return res.status(kycValidation.status).json({ success: false, code: kycValidation.code, message: kycValidation.message });
+    }
+    const envelopeValidation = validateEncryptedEnvelope({ encryptedContent, signature, conversation, expectedKind: "file" });
+    if (!envelopeValidation.valid) {
+      return res.status(400).json({ success: false, code: envelopeValidation.code, message: envelopeValidation.message });
     }
     const sender = await User.findById(req.userId).select("publicKey");
     if (!sender?.publicKey || !await verifyEnvelopeSignature(encryptedContent, signature, sender.publicKey)) {
       return res.status(409).json({ success: false, code: "KEY_MISMATCH", message: "Device key does not match the account public key. Restore or synchronize the device key before uploading." });
     }
 
-    const uploaded = await uploadToCloudinary(req.file.buffer, "application/octet-stream", "securechat/messages");
+    const uploaded = await fileStorage.uploadEncryptedFile(req.file.buffer, "application/octet-stream");
     const originalName = safeName(req.body.originalName);
     const originalMime = typeof req.body.originalMime === "string" ? req.body.originalMime.slice(0, 127) : "application/octet-stream";
+    const fileUrl = fileStorage.publicFileUrl(req, uploaded.publicId, uploaded.url);
     const message = await Message.create({
       conversationId,
       senderId: req.userId,
@@ -57,7 +55,7 @@ exports.uploadFile = async (req, res) => {
       clientMessageId: req.body.tempId || null,
       msgType: "FILE",
       status: "SENT",
-      fileUrl: uploaded.url,
+      fileUrl,
       fileName: originalName,
       fileMime: originalMime,
       fileSizeBytes: req.file.size,
@@ -133,13 +131,33 @@ exports.getFilesByConversation = async (req, res) => {
       .sort({ _id: -1 })
       .limit(limit)
       .populate("senderId", "username displayName avatarUrl kycStatus publicKey")
-      .select("encryptedContent signature senderPublicKey fileUrl fileName fileMime fileSizeBytes senderId timestamp createdAt")
+      .select("encryptedContent signature senderPublicKey fileUrl fileName fileMime fileSizeBytes filePublicId senderId timestamp createdAt")
       .lean();
     const nextCursor = files.length === limit ? files[files.length - 1]._id : null;
-    return res.json({ success: true, files: files.reverse(), nextCursor });
+    return res.json({
+      success: true,
+      files: files.reverse().map((file) => ({
+        ...file,
+        fileUrl: file.filePublicId ? fileStorage.publicFileUrl(req, file.filePublicId, file.fileUrl) : file.fileUrl,
+      })),
+      nextCursor,
+    });
   } catch (error) {
     console.error("[getFilesByConversation]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+exports.getEncryptedFileBlob = async (req, res) => {
+  try {
+    const buffer = await fileStorage.readSignedEncryptedFile(req.params.token);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    res.setHeader("Content-Type", "application/octet-stream");
+    return res.send(buffer);
+  } catch (error) {
+    const status = error.status || (error.name === "TokenExpiredError" || error.name === "JsonWebTokenError" ? 403 : 500);
+    if (status >= 500) console.error("[getEncryptedFileBlob]", error);
+    return res.status(status).json({ success: false, message: status === 403 ? "Encrypted file link is invalid or expired." : "Encrypted file not found." });
   }
 };
 

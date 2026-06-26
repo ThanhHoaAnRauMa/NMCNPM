@@ -132,12 +132,15 @@ exports.startDirectConversation = async (req, res) => {
     }
     const otherUser = await User.findById(otherId).select("username displayName avatarUrl kycStatus publicKey blocklist");
     if (!otherUser) return res.status(404).json({ success: false, message: "User not found." });
+    const requester = await User.findById(req.userId).select("kycStatus publicKey").lean();
+    if (!requester?.publicKey || !otherUser.publicKey) {
+      return res.status(409).json({ success: false, code: "PUBLIC_KEY_REQUIRED", message: "Both participants must create and synchronize a device key before starting encrypted chat." });
+    }
     const otherBlocklist = Array.isArray(otherUser.blocklist) ? otherUser.blocklist : [];
     if (otherBlocklist.some((id) => id.toString() === req.userId)) {
       return res.status(403).json({ success: false, message: "This user cannot be contacted." });
     }
     if (mode === "KYC") {
-      const requester = await User.findById(req.userId).select("kycStatus").lean();
       if (String(requester?.kycStatus).toUpperCase() !== "VERIFIED" || String(otherUser.kycStatus).toUpperCase() !== "VERIFIED") {
         return res.status(403).json({ success: false, code: "KYC_REQUIRED", message: "Both participants must be KYC verified for KYC mode." });
       }

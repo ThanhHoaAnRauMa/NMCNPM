@@ -55,7 +55,7 @@ This file records decisions that can be inferred from the current implementation
 | Rationale | The browser already owns the decryption key and can search authorized plaintext without adding server-side plaintext retention. |
 | Alternatives Considered | Store permanent plaintext; regex-search ciphertext; keep the snippet-only UI. Permanent plaintext weakens E2EE, ciphertext cannot be meaningfully regex-searched, and snippet-only results are incomplete. |
 | Decision | Page all persisted messages for the selected conversation, decrypt in bounded browser batches, perform case-insensitive substring matching, and show sender/time/jump metadata. Keep the snippet API for compatibility only. |
-| Consequences | Search speed depends on conversation size and local crypto performance. Messages whose keys are unavailable cannot be searched, and Privacy mode can search only the current in-memory session. |
+| Consequences | Search speed depends on conversation size and local crypto performance. Messages whose keys are unavailable cannot be searched. Privacy mode can search persisted ciphertext history locally, but AI summary remains unavailable by policy. |
 
 ## Opt-In Plaintext AI Processing
 
@@ -139,7 +139,7 @@ This file records decisions that can be inferred from the current implementation
 | Field | Decision |
 | --- | --- |
 | Status | Accepted |
-| Context | KYC conversations persist ciphertext while Privacy conversations are ephemeral, so one direct conversation cannot safely represent both behaviors. |
+| Context | KYC and Privacy conversations share ciphertext-only history storage but have different delivery, KYC, evidence, and AI-summary policies, so one direct conversation cannot safely represent both behaviors. |
 | Rationale | Treating only the participant pair as identity caused a request for one mode to return an existing conversation of the other mode. |
 | Alternatives Considered | Mutate the existing conversation mode; allow only one mode per user pair. Both would either change prior conversation semantics or prevent the advertised mode choice. |
 | Decision | Resolve a direct conversation by exact participant pair and compatible mode, allowing one KYC and one Privacy conversation for the same pair. |
@@ -186,8 +186,8 @@ This file records decisions that can be inferred from the current implementation
 | Context | A signed arbitrary text hash proves device submission integrity but cannot establish that a CCCD exists or matches the claimed identity. |
 | Rationale | Manual reviewers need the claimed fields and source document while ordinary registration and Privacy chat should remain available without identity disclosure. |
 | Alternatives Considered | Move hash-only KYC into registration; require KYC for Privacy; auto-verify signatures. These either force unnecessary identity collection or confuse device authenticity with identity verification. |
-| Decision | Keep KYC optional after registration, bind fields plus both image hashes into the device-signed proof, store images as authenticated Cloudinary assets, and require `VERIFIED` status only for KYC-mode membership. |
-| Consequences | The system handles sensitive identity data and requires strict reviewer allowlisting/retention controls. It is manual verification, not authoritative eKYC. |
+| Decision | Keep KYC optional after registration, bind fields plus both image hashes into the device-signed proof, store images as authenticated Cloudinary assets or local private fallback files, and require `VERIFIED` status for KYC-mode membership and sending. |
+| Consequences | The system handles sensitive identity data and requires strict reviewer allowlisting/retention controls. Local fallback is for development/demo convenience; production should use Cloudinary or another managed private object store. It is manual verification, not authoritative eKYC. |
 
 ## Password-Encrypted Device-Key Backup
 

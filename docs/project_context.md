@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Secure Chat Forensics is an educational secure messaging platform that combines client-side encrypted chat, MongoDB metadata persistence, AI-assisted moderation/summaries, and browser-generated forensic evidence packages.
+Secure Chat Forensics is an educational secure messaging platform that combines client-side encrypted chat, MongoDB metadata persistence, opt-in AI summaries, and browser-generated forensic evidence packages.
 
 Code is the source of truth. Requirement documents describe planned scope and must not be treated as implemented behavior.
 
@@ -32,7 +32,7 @@ flowchart LR
   Socket --> Mongo
 ```
 
-The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-GCM encrypted; the AES key is wrapped for each conversation member. Only public key bundles are uploaded. The client detects local/server key mismatch and the backend rejects stale signatures. KYC mode persists ciphertext plus a sender-key snapshot; Privacy mode relays ciphertext without creating a `Message` record.
+The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-GCM encrypted with a rotating per-conversation session key; the current AES key is RSA-OAEP-SHA256 wrapped for each conversation member in the signed envelope. Only public key bundles are uploaded. The client detects local/server key mismatch and the backend rejects stale signatures. KYC and Privacy modes persist ciphertext plus a sender-key snapshot; Privacy mode also queues per-recipient ciphertext for offline delivery.
 
 ## Implemented User Flows
 
@@ -45,11 +45,11 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | Realtime conversation sidebar listing | HTTP canonical list plus invited/member message Socket.IO refresh signals |
 | JWT-authenticated realtime encrypted chat | Implemented |
 | Delivered/seen, typing, missed-message recovery | Implemented |
-| Encrypted attachment upload/download | Implemented; requires Cloudinary |
+| Encrypted attachment upload/download | Implemented with Cloudinary or local private fallback storage |
 | Conversation message search | Full persisted history is decrypted and substring-searched locally; sender/time/jump results implemented |
-| Gemini moderation before encryption | Implemented with allow-on-provider-failure policy |
+| Gemini moderation before encryption | Removed from normal sends so message plaintext does not leave the browser; AI summary remains explicit opt-in |
 | Gemini conversation summary | Explicit client-supplied plaintext, human sender labels, versioned cache, and truncated-response rejection implemented |
-| Manual KYC review | Signed CCCD fields/images, private upload, allowlisted review, resubmission, and KYC-mode enforcement implemented |
+| Manual KYC review | Signed CCCD fields/images, private Cloudinary or local fallback upload, allowlisted review, resubmission, and KYC-mode enforcement implemented |
 | KYC verified account badge | Implemented in profile, user search, conversation list, chat header, message sender labels, and local search results when `kycStatus` is `VERIFIED` |
 | Device-key recovery | Password-encrypted local export/import implemented; no server key custody |
 | Forensic evidence | Local transcript package, conversation Room ID, Merkle proof/signature verification implemented |
@@ -73,8 +73,8 @@ The browser creates RSA-OAEP and ECDSA P-256 keys. Message/file content is AES-G
 | KYC | Manual document review exists; OCR, liveness, government lookup, and external eKYC provider are not integrated |
 | Forensics | No unattended periodic root worker; current UI does not perform on-chain room/root actions |
 | Multi-device crypto | Local/server mismatch detection and encrypted manual recovery exist; no automatic trusted-device transfer, and legacy messages have no key snapshots |
-| Privacy mode | Ephemeral delivery has no offline recovery by design; the frontend keeps only a browser-session message cache for tab switching |
-| Attachments | Production Cloudinary is configured; local and future environments still require credentials and browser access to encrypted blobs |
+| Privacy mode | Ciphertext history is persisted in `Message`; offline recipients receive an extra queued ciphertext copy from a TTL mailbox until ACK |
+| Attachments | Production Cloudinary is configured; encrypted attachments and KYC documents have local private fallback storage for Docker/dev |
 | Deployment | API, frontend, Atlas, Gemini, Cloudinary, KYC reviewer allowlist, and GitHub-to-Render deploy secrets are configured |
 | Operations | No Atlas automation, secret rotation workflow, metrics, tracing, or centralized logs |
 

@@ -2,6 +2,7 @@ const mongoose = require("../utils/mongoose");
 const Conversation = require("../models/Conversation.model");
 const Message = require("../models/Message.model");
 const { conversationRoomId } = require("../models/Conversation.model");
+const fileStorage = require("../utils/fileStorage.utils");
 
 function validId(value) {
   return mongoose.Types.ObjectId.isValid(value);
@@ -117,7 +118,11 @@ exports.getMessages = async (req, res) => {
       .lean();
 
     const nextCursor = messages.length === limit ? messages[messages.length - 1]._id : null;
-    return res.json({ success: true, messages: messages.reverse(), nextCursor });
+    const publicMessages = messages.reverse().map((message) => ({
+      ...message,
+      fileUrl: message.filePublicId ? fileStorage.publicFileUrl(req, message.filePublicId, message.fileUrl) : message.fileUrl,
+    }));
+    return res.json({ success: true, messages: publicMessages, nextCursor });
   } catch (error) {
     console.error("[getMessages]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });

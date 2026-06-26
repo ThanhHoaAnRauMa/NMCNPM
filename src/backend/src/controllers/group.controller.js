@@ -20,11 +20,15 @@ exports.createGroup = async (req, res) => {
       return res.status(400).json({ success: false, message: "A group name and 1 to 99 valid members are required." });
     }
     const members = [...new Set([req.userId, ...memberIds])];
-    if ((await User.countDocuments({ _id: { $in: members } })) !== members.length) {
+    const memberUsers = await User.find({ _id: { $in: members } }).select("_id kycStatus publicKey").lean();
+    if (memberUsers.length !== members.length) {
       return res.status(400).json({ success: false, message: "One or more members do not exist." });
     }
     const mode = req.body.mode === "PRIVACY" ? "PRIVACY" : "KYC";
-    if (mode === "KYC" && (await User.countDocuments({ _id: { $in: members }, kycStatus: { $in: ["VERIFIED", "verified"] } })) !== members.length) {
+    if (memberUsers.some((member) => !member.publicKey)) {
+      return res.status(409).json({ success: false, code: "PUBLIC_KEY_REQUIRED", message: "Every group member must create and synchronize a device key before encrypted chat." });
+    }
+    if (mode === "KYC" && memberUsers.some((member) => String(member.kycStatus).toUpperCase() !== "VERIFIED")) {
       return res.status(403).json({ success: false, code: "KYC_REQUIRED", message: "Every group member must be KYC verified for KYC mode." });
     }
     const group = await createConversationWithLegacyIndexRetry(Conversation, { type: "GROUP", mode, members, groupName: name, createdBy: req.userId, admins: [req.userId] });
@@ -68,7 +72,7 @@ exports.getMyGroups = async (req, res) => {
 exports.getMyConversations = async (req, res) => {
   try {
     const conversations = await Conversation.find({ members: req.userId })
-      .populate("members", "username displayName avatarUrl isOnline lastSeen kycStatus")
+      .populate("members", "username displayName avatarUrl isOnline lastSeen kycStatus publicKey")
       .populate({
         path: "lastMessage",
         select: "encryptedContent msgType senderId createdAt status fileMime fileName",
@@ -140,10 +144,14 @@ exports.addMember = async (req, res) => {
   try {
     const group = await Conversation.findById(req.params.id);
     if (!group || !isAdmin(group, req.userId)) return res.status(403).json({ success: false, message: "Group admin access required." });
-    if (!validId(req.body.userId) || !(await User.exists({ _id: req.body.userId }))) {
+    const user = validId(req.body.userId) ? await User.findById(req.body.userId).select("kycStatus publicKey").lean() : null;
+    if (!user) {
       return res.status(400).json({ success: false, message: "Valid userId is required." });
     }
-    if (["KYC", "Standard"].includes(group.mode) && !(await User.exists({ _id: req.body.userId, kycStatus: { $in: ["VERIFIED", "verified"] } }))) {
+    if (!user.publicKey) {
+      return res.status(409).json({ success: false, code: "PUBLIC_KEY_REQUIRED", message: "New members must create and synchronize a device key before encrypted chat." });
+    }
+    if (["KYC", "Standard"].includes(group.mode) && String(user.kycStatus).toUpperCase() !== "VERIFIED") {
       return res.status(403).json({ success: false, code: "KYC_REQUIRED", message: "New members of a KYC group must be KYC verified." });
     }
     await Conversation.findByIdAndUpdate(group._id, { $addToSet: { members: req.body.userId } });

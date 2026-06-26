@@ -1,6 +1,6 @@
 # Secure Chat Forensics
 
-Secure Chat Forensics is an educational full-stack messaging system that combines client-side encryption, MongoDB ciphertext persistence, Gemini-assisted moderation/summaries, and browser-generated Merkle evidence packages.
+Secure Chat Forensics is an educational full-stack messaging system that combines client-side encryption, MongoDB ciphertext persistence, opt-in Gemini summaries, and browser-generated Merkle evidence packages.
 
 ## Implemented Stack
 
@@ -10,18 +10,19 @@ Secure Chat Forensics is an educational full-stack messaging system that combine
 | Backend | Node.js 24, Express, Socket.IO, JWT |
 | Database | MongoDB, Mongoose |
 | AI | Google Gemini REST API |
-| Files | Client-encrypted blobs stored through Cloudinary |
+| Files | Client-encrypted blobs stored through Cloudinary in production or local private storage in Docker/dev |
+| KYC documents | Authenticated Cloudinary storage in production; local private fallback for Docker/dev |
 | Contracts | Solidity, Foundry, OpenZeppelin UUPS; retained for tests/reference, not required by the current frontend demo |
 | DevOps | Docker, Docker Compose, GitHub Actions, Render backend trigger |
 
 ## Security Model
 
 * Message/file plaintext is encrypted in the browser with AES-256-GCM.
-* AES keys are RSA-OAEP wrapped for conversation members.
+* Per-conversation AES session keys rotate in the browser and are RSA-OAEP-SHA256 wrapped for conversation members.
 * Encrypted envelopes are signed with ECDSA P-256.
 * Browser private keys stay in IndexedDB; MongoDB stores public keys and ciphertext.
-* KYC mode persists ciphertext. Privacy mode relays ciphertext without persistence.
-* Search snippets and AI plaintext require explicit client actions; search snippets expire after 24 hours.
+* KYC and Privacy modes persist ciphertext-only conversation history. Privacy mode also keeps per-recipient offline ciphertext in a TTL delivery mailbox until ACK/expiry.
+* Search snippets and AI summary plaintext require explicit client actions; normal chat sends do not submit plaintext to the backend.
 
 This is a portfolio/educational implementation, not an audited production messenger. See `docs/project_context.md` for current gaps.
 
@@ -66,7 +67,7 @@ npm start
 npm --prefix frontend run dev
 ```
 
-Copy `.env.example` to `.env` and configure JWT secrets. Gemini and Cloudinary are optional for core text chat but required for AI and encrypted attachments.
+Copy `.env.example` to `.env` and configure JWT secrets. Gemini and Cloudinary are optional for core text chat. Encrypted attachments and KYC documents fall back to local private storage when Cloudinary credentials are empty.
 
 ## Optional Contracts
 

@@ -1,12 +1,14 @@
 const jwt = require("jsonwebtoken");
 const Conversation = require("../models/Conversation.model");
 const Message = require("../models/Message.model");
+const PrivacyDelivery = require("../models/PrivacyDelivery.model");
 const User = require("../models/User.model");
+const { validateKycConversationMembers } = require("../utils/conversationSecurity.utils");
+const { MAX_ENCRYPTED_MESSAGE_CHARS, MAX_SIGNATURE_CHARS, validateEncryptedEnvelope } = require("../utils/encryptedEnvelope.utils");
 const { verifyEnvelopeSignature } = require("../utils/signature.utils");
 
 const onlineUsers = new Map();
 const pendingPrivacy = new Map();
-const MAX_ENCRYPTED_MESSAGE_CHARS = 100000;
 
 function bearerToken(socket) {
   const authToken = socket.handshake.auth?.token;
@@ -45,6 +47,64 @@ function notifyConversationMembers(io, conversation, payload) {
   }
 }
 
+function emitValidationError(emitError, event, validation, tempId) {
+  emitError(event, validation.code, validation.message, { tempId });
+}
+
+function privateMessagePayload(delivery) {
+  return {
+    _id: delivery.messageId?.toString(),
+    tempId: delivery.tempId,
+    conversationId: delivery.conversationId.toString(),
+    senderId: delivery.senderId.toString(),
+    encryptedContent: delivery.encryptedContent,
+    signature: delivery.signature,
+    senderPublicKey: delivery.senderPublicKey,
+    createdAt: delivery.createdAt,
+    queued: true,
+  };
+}
+
+async function queuePrivateDeliveries(conversation, senderId, messageData) {
+  const deliveries = [];
+  for (const memberId of conversation.members || []) {
+    const recipientId = memberId.toString();
+    if (recipientId === senderId) continue;
+    deliveries.push(await PrivacyDelivery.findOneAndUpdate(
+      { recipientId, tempId: messageData.tempId },
+      {
+        $setOnInsert: {
+          conversationId: messageData.conversationId,
+          recipientId,
+          senderId,
+          messageId: messageData._id,
+          tempId: messageData.tempId,
+          encryptedContent: messageData.encryptedContent,
+          signature: messageData.signature,
+          senderPublicKey: messageData.senderPublicKey,
+        },
+      },
+      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true },
+    ));
+  }
+  return deliveries;
+}
+
+async function deliverQueuedPrivateMessages(socket, conversationId) {
+  const deliveries = await PrivacyDelivery.find({
+    recipientId: socket.userId,
+    conversationId,
+    expiresAt: { $gt: new Date() },
+  })
+    .sort({ createdAt: 1 })
+    .limit(100)
+    .lean();
+  for (const delivery of deliveries) {
+    socket.emit("new_private_message", privateMessagePayload(delivery));
+  }
+  return deliveries.length;
+}
+
 module.exports = function registerChatSocket(io) {
   io.use((socket, next) => {
     try {
@@ -77,13 +137,16 @@ module.exports = function registerChatSocket(io) {
         return acknowledge?.({ success: false });
       }
       try {
-        const allowed = await Conversation.exists({ _id: conversationId, members: socket.userId });
-        if (!allowed) {
+        const conversation = await Conversation.findOne({ _id: conversationId, members: socket.userId });
+        if (!conversation) {
           emitError("join_conversation", "NOT_A_MEMBER", "Conversation not found or access denied.");
           return acknowledge?.({ success: false });
         }
         await ensureConversationRoom(socket, joinedConversations, conversationId);
-        return acknowledge?.({ success: true });
+        const queuedCount = ["PRIVACY", "Privacy"].includes(conversation.mode)
+          ? await deliverQueuedPrivateMessages(socket, conversation._id)
+          : 0;
+        return acknowledge?.({ success: true, queuedPrivateMessages: queuedCount });
       } catch (error) {
         console.error("[join_conversation]", error);
         emitError("join_conversation", "SERVER_ERROR", "Unable to join conversation.");
@@ -111,7 +174,7 @@ module.exports = function registerChatSocket(io) {
       if (typeof encryptedContent !== "string" || encryptedContent.length > MAX_ENCRYPTED_MESSAGE_CHARS) {
         return emitError("send_message", "MESSAGE_TOO_LARGE", "Encrypted message is too large.", { tempId });
       }
-      if (signature.length > 16384) return emitError("send_message", "SIGNATURE_TOO_LARGE", "Signature is too large.", { tempId });
+      if (signature.length > MAX_SIGNATURE_CHARS) return emitError("send_message", "SIGNATURE_TOO_LARGE", "Signature is too large.", { tempId });
 
       try {
         const conversation = await Conversation.findOne({ _id: conversationId, members: socket.userId });
@@ -120,6 +183,14 @@ module.exports = function registerChatSocket(io) {
         }
         if (conversation.mode === "PRIVACY" || conversation.mode === "Privacy") {
           return emitError("send_message", "USE_PRIVATE_EVENT", "Use send_private_message for privacy mode.", { tempId });
+        }
+        const kycValidation = await validateKycConversationMembers(conversation);
+        if (!kycValidation.valid) {
+          return emitError("send_message", kycValidation.code, kycValidation.message, { tempId });
+        }
+        const envelopeValidation = validateEncryptedEnvelope({ encryptedContent, signature, conversation, expectedKind: "text" });
+        if (!envelopeValidation.valid) {
+          return emitValidationError(emitError, "send_message", envelopeValidation, tempId);
         }
 
         const sender = await User.findById(socket.userId).select("publicKey");
@@ -196,13 +267,17 @@ module.exports = function registerChatSocket(io) {
       if (!conversationId || !encryptedContent || typeof signature !== "string" || !signature || !tempId) {
         return emitError("send_private_message", "MISSING_REQUIRED_FIELDS", "conversationId, encryptedContent, signature and tempId are required.", { tempId });
       }
-      if (encryptedContent.length > MAX_ENCRYPTED_MESSAGE_CHARS || signature.length > 16384) {
+      if (encryptedContent.length > MAX_ENCRYPTED_MESSAGE_CHARS || signature.length > MAX_SIGNATURE_CHARS) {
         return emitError("send_private_message", "MESSAGE_TOO_LARGE", "Encrypted message or signature is too large.", { tempId });
       }
       try {
         const conversation = await Conversation.findOne({ _id: conversationId, members: socket.userId });
         if (!conversation || !["PRIVACY", "Privacy"].includes(conversation.mode)) {
           return emitError("send_private_message", "INVALID_PRIVACY_CONVERSATION", "Privacy conversation not found or access denied.", { tempId });
+        }
+        const envelopeValidation = validateEncryptedEnvelope({ encryptedContent, signature, conversation, expectedKind: "text" });
+        if (!envelopeValidation.valid) {
+          return emitValidationError(emitError, "send_private_message", envelopeValidation, tempId);
         }
         const sender = await User.findById(socket.userId).select("publicKey");
         if (!sender?.publicKey || !await verifyEnvelopeSignature(encryptedContent, signature, sender.publicKey)) {
@@ -216,32 +291,67 @@ module.exports = function registerChatSocket(io) {
           }
         }
         const createdAt = new Date().toISOString();
-        socket.to(conversationId).emit("new_private_message", {
+        const message = await Message.create({
+          conversationId,
+          senderId: socket.userId,
+          encryptedContent,
+          signature,
+          senderPublicKey: sender.publicKey,
+          clientMessageId: tempId,
+          msgType: "TEXT",
+          status: "SENT",
+        });
+        await Conversation.findByIdAndUpdate(conversationId, { lastMessage: message._id });
+        const messageData = {
+          _id: message._id,
           tempId,
           conversationId,
           senderId: socket.userId,
           encryptedContent,
           signature,
           senderPublicKey: sender.publicKey,
-          createdAt,
-        });
+          msgType: message.msgType,
+          status: message.status,
+          timestamp: message.timestamp,
+          createdAt: message.createdAt || createdAt,
+        };
+        const deliveries = await queuePrivateDeliveries(conversation, socket.userId, messageData);
+        for (const memberId of conversation.members) {
+          const recipientId = memberId.toString();
+          if (recipientId !== socket.userId) io.to(`user:${recipientId}`).emit("new_private_message", messageData);
+        }
         pendingPrivacy.set(tempId, {
           conversationId,
           participants: new Set([socket.userId]),
+          expectedRecipients: new Set(deliveries.map((delivery) => delivery.recipientId.toString())),
           timer: setTimeout(() => pendingPrivacy.delete(tempId), 30000),
         });
-        socket.emit("private_message_sent", { tempId, conversationId, createdAt });
+        notifyConversationMembers(io, conversation, {
+          conversationId,
+          lastMessageId: message._id,
+          updatedAt: message.createdAt,
+        });
+        socket.emit("private_message_sent", { tempId, messageId: message._id, conversationId, createdAt: message.createdAt });
       } catch (error) {
+        if (error?.code === 11000) {
+          return emitError("send_private_message", "DUPLICATE_MESSAGE", "This message was already accepted.", { tempId });
+        }
         console.error("[send_private_message]", error);
         emitError("send_private_message", "SERVER_ERROR", "Unable to relay privacy message.", { tempId });
       }
     });
 
-    socket.on("ack_private_message", ({ tempId } = {}) => {
+    socket.on("ack_private_message", async ({ tempId } = {}) => {
+      if (tempId) {
+        await PrivacyDelivery.deleteOne({ recipientId: socket.userId, tempId }).catch((error) => {
+          console.error("[ack_private_message delete]", error);
+        });
+      }
       const pending = pendingPrivacy.get(tempId);
       if (!pending || !joinedConversations.has(pending.conversationId)) return;
       pending.participants.add(socket.userId);
-      if (pending.participants.size >= 2) {
+      const allRecipientsAcked = [...pending.expectedRecipients].every((recipientId) => pending.participants.has(recipientId));
+      if (allRecipientsAcked) {
         clearTimeout(pending.timer);
         pendingPrivacy.delete(tempId);
       }
@@ -302,4 +412,6 @@ module.exports = function registerChatSocket(io) {
 };
 
 module.exports.ensureConversationRoom = ensureConversationRoom;
+module.exports.deliverQueuedPrivateMessages = deliverQueuedPrivateMessages;
 module.exports.notifyConversationMembers = notifyConversationMembers;
+module.exports.queuePrivateDeliveries = queuePrivateDeliveries;

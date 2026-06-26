@@ -54,7 +54,7 @@ Registration compatibility note: clients must send `confirmPassword`. Older regi
 | GET | `/users/:id/pubkey` | None | Read a member public-key bundle |
 | POST | `/users/:id/block` | None | Block user |
 | POST | `/users/:id/unblock` | None | Unblock user |
-| POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find/create by pair and mode; each user pair has at most one KYC direct conversation and one Privacy direct conversation; recreating an existing direct conversation restores it to the caller's normal list and returns that id; KYC requires both users `VERIFIED`; response includes `roomId` |
+| POST | `/users/:id/conversation` | `{ mode: "KYC" | "PRIVACY" }` | Find/create by pair and mode; each user pair has at most one KYC direct conversation and one Privacy direct conversation; recreating an existing direct conversation restores it to the caller's normal list and returns that id; all participants need synchronized public keys, KYC additionally requires both users `VERIFIED`; response includes `roomId` |
 | GET | `/chat/conversations?includeArchived=` | `includeArchived=true` includes user-archived conversations | List member conversations with members, `roomId`, and last message; deleted-for-user conversations stay hidden |
 | GET | `/chat/:conversationId/messages?before=&limit=&includeHidden=` | Limit 1-100 | Cursor history; membership required; `includeHidden=true` restores sender-hidden records for evidence export |
 | PATCH | `/chat/conversations/:conversationId/archive` | `{ archived: true | false }` | Archive/unarchive the conversation for the authenticated user only |
@@ -67,7 +67,7 @@ Public user summaries returned by profile, user search, conversation membership,
 
 | Method | Path | Body | Purpose |
 | --- | --- | --- | --- |
-| POST | `/groups` | `{ name, memberIds, mode? }` | Create group; every KYC-mode member must be `VERIFIED` |
+| POST | `/groups` | `{ name, memberIds, mode? }` | Create group; every member needs a synchronized public key, and every KYC-mode member must be `VERIFIED` |
 | GET | `/groups` | None | List current user's groups |
 | GET | `/groups/all` | None | Compatibility conversation list with display metadata |
 | PATCH | `/groups/:id` | `{ name?, avatarUrl? }` | Admin updates group metadata |
@@ -90,10 +90,11 @@ Public user summaries returned by profile, user search, conversation membership,
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/files/blob/:token` | Download a locally stored encrypted blob using a signed short-lived token |
 | GET | `/files/:conversationId?type=&before=&limit=` | List encrypted attachment messages |
 | GET | `/files/:conversationId/jump/:messageId` | Resolve attachment to source message metadata |
 
-Cloudinary stores ciphertext. The browser downloads and decrypts it locally.
+Cloudinary or local private storage stores ciphertext only. The browser downloads and decrypts it locally. Local storage URLs are signed and regenerated when message/file history is loaded.
 
 The upload signature must match the sender's current account public key. A stale device receives `409` with `code: "KEY_MISMATCH"` before the encrypted blob is uploaded.
 
@@ -110,7 +111,7 @@ The upload signature must match the sender's current account public key. A stale
 
 Submission fields are `fullName`, `citizenId` (12 digits), `dateOfBirth`, `address`, `documentFront`, `documentBack`, `hash`, `signature`, and `pubkey`. Images must be JPEG, PNG, or WebP. The client signs a canonical payload containing the identity fields and SHA-256 of both images; the backend recomputes it and verifies the current device key before private upload.
 
-Reviewer access is controlled by `KYC_REVIEWER_EMAILS`, a comma-separated list matched against the authenticated account email. The queue returns the submitter's username/email/display name/KYC status plus signed delivery URLs for authenticated Cloudinary images. Reviewers cannot decide their own submission. Rejection deletes both images while retaining hash/audit metadata; the user may then submit replacements. External OCR/eKYC validation remains **Not Implemented**. `403 KYC_REQUIRED` means one or more participants are not verified for KYC-mode conversation creation/membership.
+Reviewer access is controlled by `KYC_REVIEWER_EMAILS`, a comma-separated list matched against the authenticated account email. The queue returns the submitter's username/email/display name/KYC status plus signed delivery URLs for authenticated Cloudinary images or local private fallback images. Reviewers cannot decide their own submission. Rejection deletes both images while retaining hash/audit metadata; the user may then submit replacements. External OCR/eKYC validation remains **Not Implemented**. `403 KYC_REQUIRED` means one or more participants are not verified for KYC-mode conversation creation/membership/sending.
 
 ## Temporary Message Search
 
@@ -153,7 +154,7 @@ Body:
 }
 ```
 
-The backend verifies every message belongs to the conversation, resolves sender display labels, removes database identifiers from the prompt, sends explicit plaintext to Gemini, and caches only a complete summary for one hour. A `MAX_TOKENS` response is rejected instead of cached. Maximums are controlled by `AI_MAX_*` variables. Privacy-mode messages are not persisted and cannot use this endpoint.
+The backend verifies every message belongs to the conversation, resolves sender display labels, removes database identifiers from the prompt, sends explicit plaintext to Gemini, and caches only a complete summary for one hour. A `MAX_TOKENS` response is rejected instead of cached. Maximums are controlled by `AI_MAX_*` variables. Privacy-mode ciphertext is persisted, but AI summary remains unavailable by local policy.
 
 ## Realtime
 

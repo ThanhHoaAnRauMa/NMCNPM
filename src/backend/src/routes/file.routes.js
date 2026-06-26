@@ -15,6 +15,7 @@ router.post("/upload", verifyToken, (req, res, next) => {
   });
 }, fileController.uploadFile);
 
+router.get("/blob/:token", fileController.getEncryptedFileBlob);
 router.get("/:conversationId", verifyToken, fileController.getFilesByConversation);
 router.get("/:conversationId/jump/:messageId", verifyToken, fileController.jumpToMessage);
 

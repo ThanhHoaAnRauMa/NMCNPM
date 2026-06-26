@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { after, before, beforeEach, describe, test } from 'node:test'
 import { createRequire } from 'node:module'
 import crypto from 'node:crypto'
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import express from 'express'
 import mongoose from 'mongoose'
 import { MongoMemoryServer } from 'mongodb-memory-server'
@@ -15,6 +18,7 @@ process.env.JWT_REFRESH_EXPIRES_IN = '7d'
 const require = createRequire(import.meta.url)
 const authRoutes = require('../../src/backend/src/routes/auth.routes.js')
 const chatRoutes = require('../../src/backend/src/routes/chat.routes.js')
+const fileRoutes = require('../../src/backend/src/routes/file.routes.js')
 const groupRoutes = require('../../src/backend/src/routes/group.routes.js')
 const kycRoutes = require('../../src/backend/src/routes/kyc.routes.js')
 const userRoutes = require('../../src/backend/src/routes/user.routes.js')
@@ -25,6 +29,7 @@ const KYCRecord = require('../../src/backend/src/models/KYCRecord.model.js')
 const cloudinaryUtils = require('../../src/backend/src/utils/cloudinary.utils.js')
 const signatureUtils = require('../../src/backend/src/utils/signature.utils.js')
 const bcrypt = require('bcryptjs')
+const TEST_PUBLIC_KEY = JSON.stringify({ v: 1, encryption: { kty: 'RSA' }, signing: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' } })
 
 const app = express()
 const realtimeEvents = []
@@ -37,6 +42,7 @@ app.set('io', {
 app.use('/auth', authRoutes)
 app.use('/users', userRoutes)
 app.use('/chat', chatRoutes)
+app.use('/files', fileRoutes)
 app.use('/groups', groupRoutes)
 app.use('/kyc', kycRoutes)
 
@@ -54,6 +60,10 @@ beforeEach(async () => {
   realtimeEvents.length = 0
   uploadSequence = 0
   deletedCloudinaryAssets.length = 0
+  process.env.CLOUDINARY_CLOUD_NAME = 'test-cloud'
+  process.env.CLOUDINARY_API_KEY = 'test-key'
+  process.env.CLOUDINARY_API_SECRET = 'test-secret'
+  delete process.env.KYC_LOCAL_STORAGE_DIR
   cloudinaryUtils.uploadToCloudinary = async () => ({ publicId: `kyc-test-${++uploadSequence}`, format: 'png', url: 'private' })
   cloudinaryUtils.deleteFromCloudinary = async (publicId, resourceType, type) => deletedCloudinaryAssets.push({ publicId, resourceType, type })
   cloudinaryUtils.signedAuthenticatedImageUrl = (publicId) => `https://signed.example/${publicId}`
@@ -71,6 +81,7 @@ async function register(username, email) {
   assert.match(response.body.devOtp, /^\d{6}$/)
   const verified = await request(app).post('/auth/register/verify').send({ email, otp: response.body.devOtp })
   assert.equal(verified.status, 201, `verify OTP ${username}/${email} failed: ${JSON.stringify(verified.body)}`)
+  await User.findByIdAndUpdate(verified.body.user.id, { publicKey: TEST_PUBLIC_KEY })
   return verified.body
 }
 
@@ -89,6 +100,24 @@ async function submitKyc(account, overrides = {}) {
     .field({ ...details, hash, signature: 'signed-hash', pubkey: 'public-key' })
     .attach('documentFront', front, { filename: 'front.png', contentType: 'image/png' })
     .attach('documentBack', back, { filename: 'back.png', contentType: 'image/png' })
+}
+
+async function signedEncryptedFileEnvelope(memberIds, overrides = {}) {
+  const wrappedKey = Buffer.alloc(256, 7).toString('base64')
+  const encryptedContent = JSON.stringify({
+    v: 1,
+    kind: 'file',
+    alg: 'RSA-OAEP-SHA256+A256GCM',
+    iv: Buffer.alloc(12, 8).toString('base64'),
+    keys: Object.fromEntries(memberIds.map((memberId) => [String(memberId), wrappedKey])),
+    fileName: overrides.fileName || 'photo.png',
+    fileMime: overrides.fileMime || 'image/png',
+  })
+  const signingPair = await crypto.webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+  const signing = await crypto.webcrypto.subtle.exportKey('jwk', signingPair.publicKey)
+  const signatureBytes = await crypto.webcrypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, signingPair.privateKey, new TextEncoder().encode(encryptedContent))
+  const publicKey = JSON.stringify({ v: 1, encryption: { kty: 'RSA' }, signing })
+  return { encryptedContent, signature: Buffer.from(signatureBytes).toString('base64'), publicKey }
 }
 
 describe('integrated feature API', () => {
@@ -372,6 +401,95 @@ describe('integrated feature API', () => {
     assert.equal(mine.status, 200)
     assert.equal(mine.body.kycRecord.address, '456 Updated Street')
     assert.equal(mine.body.kycRecord.hasDocumentFront, true)
+  })
+
+  test('stores KYC documents locally when Cloudinary is not configured', async () => {
+    delete process.env.CLOUDINARY_CLOUD_NAME
+    delete process.env.CLOUDINARY_API_KEY
+    delete process.env.CLOUDINARY_API_SECRET
+    const localDir = await fs.mkdtemp(path.join(os.tmpdir(), 'securechat-kyc-'))
+    process.env.KYC_LOCAL_STORAGE_DIR = localDir
+
+    try {
+      const alice = await register('alice', 'alice@example.com')
+      const reviewer = await register('reviewer', 'reviewer@example.com')
+      const submitted = await submitKyc(alice)
+      assert.equal(submitted.status, 201)
+      assert.equal(uploadSequence, 0)
+
+      const record = await KYCRecord.findById(submitted.body.kycRecord.id).lean()
+      assert.match(record.documentFrontPublicId, /^local:/)
+      assert.match(record.documentBackPublicId, /^local:/)
+
+      process.env.KYC_REVIEWER_EMAILS = reviewer.user.email
+      const queue = await request(app)
+        .get('/kyc/reviews')
+        .set('Authorization', `Bearer ${reviewer.accessToken}`)
+      assert.equal(queue.status, 200)
+      const frontUrl = new URL(queue.body.records[0].documents.frontUrl)
+      assert.equal(frontUrl.pathname.startsWith('/kyc/documents/'), true)
+
+      const image = await request(app).get(`${frontUrl.pathname}${frontUrl.search}`)
+      assert.equal(image.status, 200)
+      assert.equal(image.headers['content-type'], 'image/png')
+      delete process.env.KYC_REVIEWER_EMAILS
+    } finally {
+      await fs.rm(localDir, { recursive: true, force: true })
+      delete process.env.KYC_LOCAL_STORAGE_DIR
+    }
+  })
+
+  test('uploads encrypted attachments to local storage when Cloudinary is not configured', async () => {
+    delete process.env.CLOUDINARY_CLOUD_NAME
+    delete process.env.CLOUDINARY_API_KEY
+    delete process.env.CLOUDINARY_API_SECRET
+    const localDir = await fs.mkdtemp(path.join(os.tmpdir(), 'securechat-files-'))
+    process.env.FILE_LOCAL_STORAGE_DIR = localDir
+
+    try {
+      const alice = await register('alice', 'alice@example.com')
+      const bob = await register('bob', 'bob@example.com')
+      const conversation = await request(app)
+        .post(`/users/${bob.user.id}/conversation`)
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .send({ mode: 'PRIVACY' })
+      assert.equal(conversation.status, 201)
+
+      const ciphertext = Buffer.from('encrypted-image-bytes')
+      const envelope = await signedEncryptedFileEnvelope([alice.user.id, bob.user.id])
+      await User.findByIdAndUpdate(alice.user.id, { publicKey: envelope.publicKey })
+      const uploaded = await request(app)
+        .post('/files/upload')
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+        .field({
+          conversationId: conversation.body.conversationId,
+          encryptedContent: envelope.encryptedContent,
+          signature: envelope.signature,
+          originalName: 'photo.png',
+          originalMime: 'image/png',
+          tempId: 'file-temp-1',
+        })
+        .attach('file', ciphertext, { filename: 'photo.png.enc', contentType: 'application/octet-stream' })
+
+      assert.equal(uploaded.status, 201, JSON.stringify(uploaded.body))
+      assert.match(uploaded.body.message.fileUrl, /\/files\/blob\//)
+      const storedMessage = await Message.findOne({ clientMessageId: 'file-temp-1' }).lean()
+      assert.match(storedMessage.filePublicId || '', /^local:/)
+
+      const fileUrl = new URL(uploaded.body.message.fileUrl)
+      const blob = await request(app).get(fileUrl.pathname)
+      assert.equal(blob.status, 200)
+      assert.equal(Buffer.compare(blob.body, ciphertext), 0)
+
+      const history = await request(app)
+        .get(`/chat/${conversation.body.conversationId}/messages?limit=10`)
+        .set('Authorization', `Bearer ${alice.accessToken}`)
+      assert.equal(history.status, 200)
+      assert.match(history.body.messages[0].fileUrl, /\/files\/blob\//)
+    } finally {
+      await fs.rm(localDir, { recursive: true, force: true })
+      delete process.env.FILE_LOCAL_STORAGE_DIR
+    }
   })
 
   test('restricts KYC reviews and synchronizes reviewer decisions', async () => {

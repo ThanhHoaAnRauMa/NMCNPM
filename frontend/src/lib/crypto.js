@@ -1,5 +1,8 @@
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
+const SESSION_KEY_MAX_MESSAGES = 100
+const SESSION_KEY_MAX_AGE_MS = 30 * 60 * 1000
+const sessionKeys = new Map()
 
 function bytesToBase64(value) {
   const bytes = value instanceof Uint8Array ? value : new Uint8Array(value)
@@ -74,38 +77,81 @@ async function encryptKeyForRecipients(aesKey, recipients) {
   return keys
 }
 
+function recipientFingerprint(recipients) {
+  return recipients
+    .map((recipient) => `${recipient.userId}:${recipient.publicKey}`)
+    .sort()
+    .join('|')
+}
+
+async function sessionKeyForConversation(conversationId, recipients, forceRotate = false) {
+  if (!conversationId) return null
+  const now = Date.now()
+  const fingerprint = recipientFingerprint(recipients)
+  const cached = sessionKeys.get(conversationId)
+  if (
+    !forceRotate &&
+    cached &&
+    cached.fingerprint === fingerprint &&
+    cached.uses < SESSION_KEY_MAX_MESSAGES &&
+    now - cached.createdAt < SESSION_KEY_MAX_AGE_MS
+  ) {
+    cached.uses += 1
+    return cached
+  }
+
+  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
+  const next = {
+    key,
+    keyId: crypto.randomUUID(),
+    version: (cached?.version || 0) + 1,
+    createdAt: now,
+    uses: 1,
+    fingerprint,
+  }
+  sessionKeys.set(conversationId, next)
+  return next
+}
+
 async function signPayload(payload, identity) {
   const key = await importSigningPrivate(identity.signingPrivate)
   return bytesToBase64(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, encoder.encode(payload)))
 }
 
-async function createEnvelope(bytes, kind, recipients, identity, metadata = {}) {
-  const aesKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
+async function createEnvelope(bytes, kind, recipients, identity, metadata = {}, options = {}) {
+  const session = await sessionKeyForConversation(options.conversationId, recipients, options.forceRotate)
+  const aesKey = session?.key || await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, bytes)
   const envelope = {
-    v: 1,
+    v: session ? 2 : 1,
     kind,
-    alg: 'RSA-OAEP-256+A256GCM',
+    alg: 'RSA-OAEP-SHA256+A256GCM',
     iv: bytesToBase64(iv),
     keys: await encryptKeyForRecipients(aesKey, recipients),
     ...metadata,
+  }
+  if (session) {
+    envelope.sessionId = session.keyId
+    envelope.keyVersion = session.version
+    envelope.conversationId = options.conversationId
+    envelope.keyCreatedAt = new Date(session.createdAt).toISOString()
   }
   if (kind === 'text') envelope.ciphertext = bytesToBase64(ciphertext)
   const serialized = JSON.stringify(envelope)
   return { envelope: serialized, signature: await signPayload(serialized, identity), ciphertext }
 }
 
-export async function encryptText(text, recipients, identity) {
-  const result = await createEnvelope(encoder.encode(text), 'text', recipients, identity)
+export async function encryptText(text, recipients, identity, options = {}) {
+  const result = await createEnvelope(encoder.encode(text), 'text', recipients, identity, {}, options)
   return { encryptedContent: result.envelope, signature: result.signature }
 }
 
-export async function encryptFile(file, recipients, identity) {
+export async function encryptFile(file, recipients, identity, options = {}) {
   const result = await createEnvelope(await file.arrayBuffer(), 'file', recipients, identity, {
     fileName: file.name,
     fileMime: file.type || 'application/octet-stream',
-  })
+  }, options)
   return {
     encryptedContent: result.envelope,
     signature: result.signature,

@@ -8,7 +8,7 @@
 | Database | MongoDB 8 local or MongoDB Atlas |
 | Containers | Docker + Compose |
 | Contracts | Foundry for build/test/reference contract work |
-| External services | Gmail SMTP for registration OTP; Gemini for AI; Cloudinary for encrypted attachments and authenticated KYC document images |
+| External services | Gmail SMTP for registration OTP; Gemini for AI; Cloudinary for production encrypted attachments and authenticated KYC document images |
 
 ## Local Development
 
@@ -48,10 +48,13 @@ The frontend image is a Vite build served by Nginx. `VITE_*` values are build-ti
 | `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN` | No | Defaults `15m`, `7d` |
 | `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM_NAME`, `EMAIL_FROM` | For registration | Gmail sender account, Google App Password, display name, and optional verified sender alias |
 | `REGISTRATION_OTP_EXPIRES_MINUTES`, `REGISTRATION_OTP_MAX_ATTEMPTS` | No | Defaults `10`, `5` |
+| `PRIVACY_DELIVERY_TTL_HOURS` | No | Hours to retain undelivered Privacy-mode ciphertext, default `24` |
 | `KYC_REVIEWER_EMAILS` | For KYC review | Comma-separated reviewer account emails; keep empty to deny all reviewers |
 | `GEMINI_API_KEY` | For AI | Gemini API key |
 | `GEMINI_MODEL`, `GEMINI_*_TIMEOUT_MS`, `GEMINI_RETRIES`, `AI_MAX_*` | No | AI model, limits, retry count, and timeouts; moderation defaults to 5 seconds and is capped at 10 seconds |
-| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | For files | Encrypted blob storage |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Production files | Encrypted attachment blob storage; when present, also stores KYC documents |
+| `KYC_LOCAL_STORAGE_DIR`, `KYC_DOCUMENT_TOKEN_EXPIRES_IN` | No | Local/dev fallback directory for KYC documents and signed document-link lifetime; Compose persists it in `kyc-documents` |
+| `FILE_LOCAL_STORAGE_DIR`, `FILE_TOKEN_EXPIRES_IN` | No | Local/dev fallback directory for encrypted attachments and signed blob-link lifetime; Compose persists it in `encrypted-files` |
 | `MAX_FILE_SIZE_MB` | No | Default 10 MB |
 | `VITE_API_URL` | Frontend build | Public API/Socket.IO URL |
 

@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    user: root
+    command: sh -lc "mkdir -p /usr/src/app/storage/kyc && chown -R node:node /usr/src/app/storage && su node -s /bin/sh -c 'npm start'"
     restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-development}
@@ -17,6 +19,8 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-}
       REGISTRATION_OTP_EXPIRES_MINUTES: ${REGISTRATION_OTP_EXPIRES_MINUTES:-10}
       REGISTRATION_OTP_MAX_ATTEMPTS: ${REGISTRATION_OTP_MAX_ATTEMPTS:-5}
+      PRIVACY_DELIVERY_TTL_HOURS: ${PRIVACY_DELIVERY_TTL_HOURS:-24}
+      KYC_REVIEWER_EMAILS: ${KYC_REVIEWER_EMAILS:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       GEMINI_TIMEOUT_MS: ${GEMINI_TIMEOUT_MS:-10000}
@@ -31,6 +35,10 @@ services:
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
+      KYC_LOCAL_STORAGE_DIR: ${KYC_LOCAL_STORAGE_DIR:-/usr/src/app/storage/kyc}
+      KYC_DOCUMENT_TOKEN_EXPIRES_IN: ${KYC_DOCUMENT_TOKEN_EXPIRES_IN:-15m}
+      FILE_LOCAL_STORAGE_DIR: ${FILE_LOCAL_STORAGE_DIR:-/usr/src/app/storage/files}
+      FILE_TOKEN_EXPIRES_IN: ${FILE_TOKEN_EXPIRES_IN:-7d}
       MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB:-10}
     depends_on:
       mongo:
@@ -43,6 +51,9 @@ services:
       start_period: 10s
     ports:
       - '${PORT:-3000}:${PORT:-3000}'
+    volumes:
+      - kyc-documents:/usr/src/app/storage/kyc
+      - encrypted-files:/usr/src/app/storage/files
 
   frontend:
     build:
@@ -75,3 +86,5 @@ services:
 
 volumes:
   mongo-data:
+  kyc-documents:
+  encrypted-files:

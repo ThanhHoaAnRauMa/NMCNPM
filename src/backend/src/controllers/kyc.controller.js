@@ -1,7 +1,7 @@
 const KYCRecord = require("../models/KYCRecord.model");
 const User = require("../models/User.model");
 const crypto = require("crypto");
-const cloudinaryUtils = require("../utils/cloudinary.utils");
+const kycDocumentStorage = require("../utils/kycDocumentStorage.utils");
 const signatureUtils = require("../utils/signature.utils");
 
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -61,10 +61,10 @@ exports.submitKYC = async (req, res) => {
     let uploadedFront;
     let uploadedBack;
     try {
-      uploadedFront = await cloudinaryUtils.uploadToCloudinary(front.buffer, front.mimetype, "securechat/kyc", { type: "authenticated" });
-      uploadedBack = await cloudinaryUtils.uploadToCloudinary(back.buffer, back.mimetype, "securechat/kyc", { type: "authenticated" });
+      uploadedFront = await kycDocumentStorage.uploadKycDocument(front.buffer, front.mimetype);
+      uploadedBack = await kycDocumentStorage.uploadKycDocument(back.buffer, back.mimetype);
     } catch (uploadError) {
-      if (uploadedFront?.publicId) await cloudinaryUtils.deleteFromCloudinary(uploadedFront.publicId, "image", "authenticated");
+      if (uploadedFront?.publicId) await kycDocumentStorage.deleteKycDocument(uploadedFront.publicId);
       throw uploadError;
     }
     const oldDocuments = existing ? [existing.documentFrontPublicId, existing.documentBackPublicId].filter(Boolean) : [];
@@ -78,10 +78,10 @@ exports.submitKYC = async (req, res) => {
     try {
       await record.save();
     } catch (saveError) {
-      await Promise.all([uploadedFront, uploadedBack].map((item) => cloudinaryUtils.deleteFromCloudinary(item.publicId, "image", "authenticated")));
+      await Promise.all([uploadedFront, uploadedBack].map((item) => kycDocumentStorage.deleteKycDocument(item.publicId)));
       throw saveError;
     }
-    await Promise.all(oldDocuments.map((publicId) => cloudinaryUtils.deleteFromCloudinary(publicId, "image", "authenticated")));
+    await Promise.all(oldDocuments.map((publicId) => kycDocumentStorage.deleteKycDocument(publicId)));
     await User.findByIdAndUpdate(req.userId, { kycStatus: "PENDING" });
     return res.status(201).json({
       success: true,
@@ -137,8 +137,8 @@ exports.listKYCReviews = async (req, res) => {
     const reviewRecords = records.map((record) => ({
       ...record,
       documents: record.documentFrontPublicId && record.documentBackPublicId ? {
-        frontUrl: cloudinaryUtils.signedAuthenticatedImageUrl(record.documentFrontPublicId, record.documentFrontFormat),
-        backUrl: cloudinaryUtils.signedAuthenticatedImageUrl(record.documentBackPublicId, record.documentBackFormat),
+        frontUrl: kycDocumentStorage.signedKycDocumentUrl(req, record.documentFrontPublicId, record.documentFrontFormat),
+        backUrl: kycDocumentStorage.signedKycDocumentUrl(req, record.documentBackPublicId, record.documentBackFormat),
       } : null,
       documentFrontPublicId: undefined,
       documentBackPublicId: undefined,
@@ -201,7 +201,7 @@ exports.reviewKYC = async (req, res) => {
         documentFrontPublicId: null, documentFrontFormat: null,
         documentBackPublicId: null, documentBackFormat: null,
       });
-      await Promise.all(rejectedDocuments.map((publicId) => cloudinaryUtils.deleteFromCloudinary(publicId, "image", "authenticated")));
+      await Promise.all(rejectedDocuments.map((publicId) => kycDocumentStorage.deleteKycDocument(publicId)));
     }
 
     return res.json({
@@ -215,6 +215,19 @@ exports.reviewKYC = async (req, res) => {
   } catch (error) {
     console.error("[reviewKYC]", error);
     return res.status(500).json({ success: false, message: "Internal server error." });
+  }
+};
+
+exports.getSignedKycDocument = async (req, res) => {
+  try {
+    const document = await kycDocumentStorage.readSignedLocalDocument(req.params.token);
+    res.setHeader("Cache-Control", "no-store, private");
+    res.setHeader("Content-Type", document.mimeType);
+    return res.send(document.buffer);
+  } catch (error) {
+    const status = error.status || (error.name === "TokenExpiredError" || error.name === "JsonWebTokenError" ? 403 : 500);
+    if (status >= 500) console.error("[getSignedKycDocument]", error);
+    return res.status(status).json({ success: false, message: status === 403 ? "KYC document link is invalid or expired." : "KYC document not found." });
   }
 };
 

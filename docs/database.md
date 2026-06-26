@@ -13,6 +13,7 @@ The database stores account metadata, encrypted message payloads, KYC hashes, Me
 | `User` | `src/backend/src/models/User.model.js` | Runtime account/profile/auth state and public key |
 | `Conversation` | `src/backend/src/models/Conversation.model.js` | Runtime direct/group metadata and last message |
 | `Message` | `src/db/models/message.js` | Canonical encrypted message, file, status, and integrity schema |
+| `PrivacyDelivery` | `src/backend/src/models/PrivacyDelivery.model.js` | Per-recipient Privacy-mode ciphertext delivery mailbox with TTL |
 | `MessageSearch` | `src/db/models/messageSearch.js` | Opt-in temporary plaintext snippets for search |
 | `AISummaryCache` | `src/db/models/aiSummaryCache.js` | Cached Gemini summaries without storing source plaintext |
 | `MerkleCommit` | `src/db/models/merkleCommit.js` | Merkle root and on-chain transaction metadata |
@@ -64,8 +65,6 @@ Indexes:
 | Index | Purpose |
 | --- | --- |
 | `{ members: 1, updatedAt: -1 }` | Membership and recent ordering |
-| `{ members: 1, archivedFor: 1, updatedAt: -1 }` | Filtering archived conversations per user |
-| `{ members: 1, deletedFor: 1, updatedAt: -1 }` | Filtering user-hidden conversations |
 | `{ type: 1, members: 1 }` | Direct/group membership lookup |
 | `{ type: 1, mode: 1, members: 1 }` | Mode-specific direct conversation lookup |
 | `{ roomId: 1 }` unique sparse | Evidence package room lookup/display |
@@ -84,7 +83,7 @@ Indexes:
 | `clientMessageId` | String | No | Idempotency key |
 | `msgType` | String enum | No | `TEXT`, `FILE`, `SYSTEM` |
 | `status` | String enum | No | `SENT`, `DELIVERED`, `SEEN` |
-| `fileUrl`, `fileName`, `fileMime`, `fileSizeBytes`, `filePublicId` | Mixed | No | Encrypted attachment blob and display metadata |
+| `fileUrl`, `fileName`, `fileMime`, `fileSizeBytes`, `filePublicId` | Mixed | No | Encrypted attachment blob and display metadata; `filePublicId` may be Cloudinary or `local:` fallback id |
 | `replyTo` | ObjectId -> `Message` | No | Reply reference |
 | `deletedForSender` | Boolean | No | Sender-only UI hide; record remains |
 | timestamps | Date | Auto | `createdAt`, `updatedAt` plus forensic `timestamp` |
@@ -98,6 +97,31 @@ Indexes:
 | `{ conversationId: 1, senderId: 1, timestamp: -1, _id: -1 }` | Filtered chat history |
 | `{ senderId: 1, clientMessageId: 1 }` unique partial | Duplicate-send protection |
 | `{ conversationId: 1, msgType: 1, createdAt: -1, _id: -1 }` | Attachment history |
+
+## PrivacyDelivery
+
+`PrivacyDelivery` stores a delivery copy of Privacy-mode ciphertext only long enough for offline or not-yet-open clients to receive it. Conversation history lives in `Message`; the delivery copy is deleted when the recipient sends `ack_private_message` and expires automatically by TTL.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `conversationId` | ObjectId -> `Conversation` | Yes | Privacy conversation |
+| `recipientId` | ObjectId -> `User` | Yes | Only this user receives and can decrypt the envelope |
+| `senderId` | ObjectId -> `User` | Yes | Sender reference |
+| `messageId` | ObjectId -> `Message` | Yes | Persisted ciphertext history record |
+| `tempId` | String | Yes | Client idempotency/delivery key |
+| `encryptedContent` | String | Yes | Signed envelope containing ciphertext and recipient-wrapped AES key |
+| `signature` | String | Yes | Sender ECDSA signature over `encryptedContent` |
+| `senderPublicKey` | String | No | Sender key snapshot |
+| `expiresAt` | Date | Yes | TTL expiry, default controlled by `PRIVACY_DELIVERY_TTL_HOURS` |
+| timestamps | Date | Auto | Queue time |
+
+Indexes:
+
+| Index | Purpose |
+| --- | --- |
+| `{ recipientId: 1, conversationId: 1, createdAt: 1 }` | Deliver queued ciphertext when the recipient joins |
+| `{ recipientId: 1, tempId: 1 }` unique | Avoid duplicate queued deliveries |
+| `{ expiresAt: 1 }` TTL 0 seconds | Delete undelivered Privacy ciphertext |
 
 ## MessageSearch
 
@@ -176,7 +200,7 @@ Indexes:
 | `signature` | String | Yes | Signature metadata |
 | `pubkey` | String | Yes | Public-key snapshot |
 | `fullName`, `citizenId`, `dateOfBirth`, `address` | Mixed | New submissions | Reviewer-visible identity fields; legacy records may be null |
-| `documentFrontPublicId`, `documentBackPublicId` | String | New submissions | Authenticated Cloudinary asset identifiers; never returned to ordinary users |
+| `documentFrontPublicId`, `documentBackPublicId` | String | New submissions | Authenticated Cloudinary asset ids or `local:` private fallback ids; never returned to ordinary users |
 | `documentFrontFormat`, `documentBackFormat` | String | New submissions | Signed-delivery format metadata |
 | `status` | String enum | No | `PENDING`, `VERIFIED`, `REJECTED`; submission creates `PENDING` only |
 | `verifiedAt` | Date | No | Verification timestamp |
@@ -193,7 +217,7 @@ Indexes:
 | `{ status: 1, createdAt: 1, _id: 1 }` | Ordered reviewer queue |
 | `{ citizenId: 1 }` unique partial | Prevent one submitted CCCD number from backing multiple accounts |
 
-CCCD images are not stored in MongoDB. New submissions bind the identity fields and both image hashes into `docHash`; private Cloudinary asset IDs are exposed only through allowlisted review responses as signed URLs. Rejection removes the Cloudinary images and clears their IDs while retaining audit/hash metadata. Legacy hash-only records remain readable but cannot be approved through the current UI without images.
+CCCD images are not stored in MongoDB. New submissions bind the identity fields and both image hashes into `docHash`; private document IDs are exposed only through allowlisted review responses as signed URLs. Production uses authenticated Cloudinary assets, while local/dev can store files under `KYC_LOCAL_STORAGE_DIR` and serve them through short-lived `/kyc/documents/:token` URLs. Rejection removes the images and clears their IDs while retaining audit/hash metadata. Legacy hash-only records remain readable but cannot be approved through the current UI without images.
 
 ## Query Helpers
 
