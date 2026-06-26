@@ -2,7 +2,7 @@ const mongoose = require("../utils/mongoose");
 const Conversation = require("../models/Conversation.model");
 const User = require("../models/User.model");
 const { conversationRoomId } = require("../models/Conversation.model");
-const { createConversationWithLegacyIndexRetry } = require("../utils/conversationIndexes.utils");
+const { createDirectConversationWithFallback } = require("../utils/conversationIndexes.utils");
 
 function validId(value) {
   return mongoose.Types.ObjectId.isValid(value);
@@ -143,22 +143,36 @@ exports.startDirectConversation = async (req, res) => {
       }
     }
 
-    let conversation = await Conversation.findOne({
+    const exactConversationQuery = {
       type: { $in: ["DIRECT", "direct"] },
       mode: { $in: compatibleModes },
       members: { $all: [req.userId, otherId], $size: 2 },
-    }).sort({ createdAt: 1 });
+    };
+    const anyDirectConversationQuery = {
+      type: { $in: ["DIRECT", "direct"] },
+      members: { $all: [req.userId, otherId], $size: 2 },
+    };
+    let conversation = await Conversation.findOne(exactConversationQuery).sort({ createdAt: 1 });
     let isNew = false;
+    let warningCode = null;
     if (!conversation) {
-      conversation = await createConversationWithLegacyIndexRetry(Conversation, { type: "DIRECT", mode, members: [req.userId, otherId] });
-      isNew = true;
-      req.app.get("io")?.to(`user:${otherId}`).emit("conversation_created", {
-        conversationId: conversation._id,
-        roomId: conversation.roomId || conversationRoomId(conversation._id),
-        type: conversation.type,
-        mode: conversation.mode,
-        createdBy: req.userId,
-      });
+      const created = await createDirectConversationWithFallback(
+        Conversation,
+        { type: "DIRECT", mode, members: [req.userId, otherId] },
+        anyDirectConversationQuery,
+      );
+      conversation = created.conversation;
+      warningCode = created.recoveryCode || null;
+      isNew = !created.recovered;
+      if (isNew) {
+        req.app.get("io")?.to(`user:${otherId}`).emit("conversation_created", {
+          conversationId: conversation._id,
+          roomId: conversation.roomId || conversationRoomId(conversation._id),
+          type: conversation.type,
+          mode: conversation.mode,
+          createdBy: req.userId,
+        });
+      }
     }
     if (!isNew) {
       await Conversation.updateOne({ _id: conversation._id }, { $pull: { archivedFor: req.userId, deletedFor: req.userId } });
@@ -173,10 +187,18 @@ exports.startDirectConversation = async (req, res) => {
       roomId: conversationObject.roomId || conversationRoomId(conversationObject._id),
       conversation: { ...conversationObject, roomId: conversationObject.roomId || conversationRoomId(conversationObject._id) },
       isNew,
+      warningCode,
       otherUser: publicOtherUser,
     });
   } catch (error) {
     console.error("[startDirectConversation]", error);
-    return res.status(500).json({ success: false, message: "Internal server error." });
+    if (error.code === 11000 || error.code === 11001) {
+      return res.status(409).json({
+        success: false,
+        code: error.conversationCode || "CONVERSATION_DUPLICATE_INDEX",
+        message: "Conversation database index conflict. Try again after the database index migration completes.",
+      });
+    }
+    return res.status(500).json({ success: false, code: error.name || "SERVER_ERROR", message: "Internal server error." });
   }
 };

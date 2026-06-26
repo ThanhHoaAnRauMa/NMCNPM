@@ -5,6 +5,7 @@ import test from 'node:test'
 const require = createRequire(import.meta.url)
 
 const {
+  createDirectConversationWithFallback,
   createConversationWithLegacyIndexRetry,
   isLegacyConversationMemberUniqueIndex,
 } = require('../../src/backend/src/utils/conversationIndexes.utils.js')
@@ -85,4 +86,45 @@ test('conversation model generates a bytes32 room id before insert', async () =>
 
   assert.match(conversation.roomId, /^0x[a-f0-9]{64}$/i)
   assert.ok(conversation.roomId.endsWith(String(conversation._id)))
+})
+
+test('direct conversation creation falls back to an existing room when legacy unique index remains', async () => {
+  const duplicateKeyError = new Error('duplicate key')
+  duplicateKeyError.code = 11000
+  const existingConversation = { _id: 'existing-conversation', mode: 'KYC' }
+  const fallbackQuery = { members: { $all: ['a', 'b'], $size: 2 } }
+  const queries = []
+
+  const Conversation = {
+    collection: {
+      async indexes() {
+        return [{ name: 'legacy_member_unique', unique: true, key: { type: 1, members: 1 } }]
+      },
+      async dropIndex() {
+        throw new Error('not authorized to drop indexes')
+      },
+    },
+    async create() {
+      throw duplicateKeyError
+    },
+    findOne(query) {
+      queries.push(query)
+      return {
+        sort() {
+          return existingConversation
+        },
+      }
+    },
+  }
+
+  const result = await createDirectConversationWithFallback(
+    Conversation,
+    { type: 'DIRECT', mode: 'PRIVACY', members: ['a', 'b'] },
+    fallbackQuery
+  )
+
+  assert.equal(result.conversation, existingConversation)
+  assert.equal(result.recovered, true)
+  assert.equal(result.recoveryCode, 'CONVERSATION_INDEX_MIGRATION_FAILED')
+  assert.deepEqual(queries, [fallbackQuery])
 })

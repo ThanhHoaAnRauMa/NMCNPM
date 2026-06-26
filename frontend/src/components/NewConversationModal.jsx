@@ -47,19 +47,22 @@ export default function NewConversationModal({ api, notify, onClose, onCreated }
     setError('')
     try {
       let conversationId
+      let warningCode = null
       if (kind === 'direct') {
         const payload = await api.post(`/users/${userId(selected[0])}/conversation`, { mode })
         conversationId = payload.conversationId
+        warningCode = payload.warningCode
       } else {
         const payload = await api.post('/groups', { name: groupName.trim(), mode, memberIds: selected.map(userId) })
         conversationId = payload.group._id
       }
       await onCreated(conversationId)
-      notify?.('Đã mở cuộc trò chuyện.', { type: 'success' })
+      notify?.(warningCode ? 'Đã mở cuộc trò chuyện có sẵn do database còn index cũ.' : 'Đã mở cuộc trò chuyện.', { type: warningCode ? 'warning' : 'success' })
       onClose()
     } catch (requestError) {
-      setError(requestError.message)
-      notify?.(requestError.message, { type: 'error', title: 'Tạo cuộc trò chuyện' })
+      const message = requestError.payload?.code ? `${requestError.message} (${requestError.payload.code})` : requestError.message
+      setError(message)
+      notify?.(message, { type: 'error', title: 'Tạo cuộc trò chuyện' })
     } finally {
       setBusy(false)
     }
